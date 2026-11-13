@@ -1,0 +1,15 @@
+# Spending and approval rules. Saved from the dashboard.
+# auto_approve_max_total_eur: orders above this total (EUR, excluding VAT) need a person.
+# max_quantity_multiplier_vs_usual: more than this many times the usual amount needs a person.
+# allowed_categories: product groups the agent may buy on its own (names from categories.yaml).
+# agent_budget_eur: the most the agent may spend in total on its own; the supplier enforces it.
+auto_approve_max_total_eur: 500
+max_quantity_multiplier_vs_usual: 3
+allowed_categories:
+- dairy
+- plant-based drinks
+substitutes_require_approval: true
+late_delivery_requires_approval: true
+web_caution_requires_approval: true
+web_check_failed_requires_approval: true
+agent_budget_eur: 2000

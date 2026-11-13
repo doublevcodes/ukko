@@ -1,0 +1,67 @@
+# Plain names for Valio's numeric category codes.
+#
+# The catalogue only has codes, with no names, so these groups were mapped by
+# hand by looking at the products in each code. A code that is not listed here
+# counts as "unknown category" and is never on the allowed list.
+
+dairy:
+  - "10400"  # milk
+  - "10401"  # cream
+  - "10404"  # condensed milk
+  - "10405"  # milk and cream powder
+  - "10411"  # fermented milk, viili
+  - "10412"  # yoghurt
+  - "10419"  # sour cream, kefir, crème fraîche
+  - "10430"  # quark
+  - "10431"  # dairy snacks and puddings
+  - "10432"  # dessert bases, soft ice mix
+
+plant-based drinks:
+  - "10402"  # oat, soya, almond and coconut drinks
+  - "10406"  # plant-based cooking creams
+  - "10413"  # plant-based yoghurt alternatives
+  - "10418"  # plant-based fraiche
+
+butter and spreads:
+  - "10500"  # butter
+  - "10501"  # butter portions
+  - "10502"  # flavoured butter
+  - "10515"  # margarine
+  - "10516"  # margarine portions
+  - "10517"  # liquid margarine
+  - "10518"  # baking margarine
+
+cheese:
+  - "10600"
+  - "10602"
+  - "10603"
+  - "10630"
+  - "10631"
+  - "10632"
+  - "10633"
+  - "10635"
+  - "10636"
+  - "10637"
+  - "10639"
+  - "10640"
+  - "10641"  # plant-based cheese alternatives
+
+eggs:
+  - "10590"
+  - "10592"
+
+cooking oils:
+  - "10530"
+  - "10531"
+  - "10532"
+
+bread:
+  - "10900"
+  - "10901"
+  - "10902"
+  - "10903"
+
+flour:
+  - "21300"
+  - "21310"
+  - "21320"

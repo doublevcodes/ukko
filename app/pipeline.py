@@ -1,0 +1,231 @@
+"""The fixed pipeline: eight steps, one function each, always in the same order.
+
+1 parse -> 2 lookup -> 3 build plans -> 4 web checks -> 5 choose and explain
+-> 6 policy check -> 7 order or ask a person -> 8 finalise
+
+Each step writes to the audit log and handles its own errors. The language
+model helps in steps 1, 2, 4 and 5; it never decides whether to order.
+"""
+
+from __future__ import annotations
+
+import secrets
+from datetime import timedelta
+from typing import Any
+
+from app import explain, gateway_client, llm, lookup as lookup_step, ordering, parsing, planner, policy, state
+from app.config import ShelfProduct
+from app.gateway_client import GatewayError, GatewayRefused
+from app.models import Alternative, OrderRequest, Plan, PolicyResult, WebFinding
+from app.planner import PlanSet
+from app.state import RequestRecord
+from app.web import plan_checks
+
+MAX_REPLANS = 2
+NOTHING_ORDERED = "Nothing was ordered."
+_vocabulary_cache: dict[str, Any] | None = None
+
+
+def _vocabulary() -> dict[str, Any]:
+    """The supplier's list of checkable requirements, fetched once."""
+    global _vocabulary_cache
+    if _vocabulary_cache is None:
+        _vocabulary_cache = gateway_client.vocabulary()
+    return _vocabulary_cache
+
+
+def fail(record: RequestRecord, step: str, message: str) -> None:
+    record.decision.status, record.decision.message = "failed", f"{message} {NOTHING_ORDERED}"
+    state.log(record.id, step, record.decision.message)
+
+
+def _ask(record: RequestRecord, step: str, question: str) -> None:
+    record.decision.status, record.decision.message = "needs_clarification", question
+    state.log(record.id, step, f"Asked a question instead of guessing: {question}")
+
+
+def parse_request(record: RequestRecord, text: str) -> bool:
+    """Step 1 (typed): the language model reads the text; code refuses to guess."""
+    try:
+        request, question, notes = parsing.parse(text, record.id, _vocabulary(), state.now().date())
+    except GatewayError as error:
+        fail(record, "parse", f"The supplier could not be reached. {error}")
+        return False
+    except llm.LLMError as error:
+        fail(record, "parse", f"The request could not be read. {error}")
+        return False
+    if question:
+        _ask(record, "parse", question)
+        return False
+    record.request = request
+    must = f", must be {', '.join(request.constraints)}" if request.constraints else ""
+    wish = f", ideally {', '.join(request.preferences)}" if request.preferences else ""
+    state.log(record.id, "parse", f"Understood: {request.quantity} {request.unit} of {request.item_description} "
+              f"by {request.needed_by:%a %d %b}{must}{wish}. {' '.join(notes)}".strip(), request=request.model_dump(mode="json"))
+    return True
+
+
+def request_from_shelf(record: RequestRecord, product: ShelfProduct) -> bool:
+    """Step 1 (sensor): no language model; the reorder settings come from shelf.yaml."""
+    needed_by = state.now().date() + timedelta(days=product.lead_time_days)
+    record.request = OrderRequest(
+        id=record.id, source="sensor", item_description=product.name, quantity=product.reorder_quantity,
+        unit=product.unit, needed_by=needed_by, constraints=product.constraints, preferences=product.preferences,
+        search_terms=product.search_terms, product_id=product.product_id, usual_quantity=product.usual_quantity,
+    )
+    state.log(record.id, "parse", f"Reorder settings from shelf.yaml: {product.reorder_quantity} {product.unit} of "
+              f"{product.name}, needed by {needed_by:%a %d %b}.", request=record.request.model_dump(mode="json"))
+    return True
+
+
+def lookup(record: RequestRecord) -> bool:
+    """Step 2: search the catalogue and get live signed offers for the candidates."""
+    request = record.request
+    try:
+        found = lookup_step.find(request, _vocabulary())
+    except (GatewayError, GatewayRefused) as error:
+        fail(record, "lookup", f"The supplier could not answer. {error}")
+        return False
+    if not found.offers:
+        needs = f" marked {', '.join(request.constraints)}" if request.constraints else ""
+        _ask(record, "lookup", f"I found no product{needs} matching '{request.search_terms}' in Valio's catalogue. "
+             "Can you describe it differently?")
+        return False
+    record.offers, record.candidate_ids, record.exact_id = found.offers, found.candidate_ids, found.exact_id
+    orderable = sum(1 for offer in found.offers if offer.orderable)
+    state.log(record.id, "lookup", f"Got live, signed offers from Valio for {len(found.offers)} products; "
+              f"{orderable} can be ordered now. {' '.join(found.notes)}".strip(),
+              offers=[{"product_id": o.product_id, "name": o.name, "unit_price": str(o.unit_price), "orderable": o.orderable,
+                       "available": o.available_quantity, "offer_id": o.offer_id} for o in found.offers])
+    return True
+
+
+def build_plans(record: RequestRecord) -> PlanSet | None:
+    """Step 3: plain code builds plans A, B and C where they are possible."""
+    plans = planner.build_plans(record.request, record.offers, record.exact_id)
+    record.decision.substitute_options = plans.substitute_options
+    if not plans.plans:
+        fail(record, "plans", "No plan is possible: no candidate can be ordered and meets the requirements. " + " ".join(plans.notes))
+        return None
+    listing = "; ".join(f"Plan {p.id} ({p.label}): {p.total:.2f} EUR, covers {p.coverage:.0%}" for p in plans.plans)
+    state.log(record.id, "plans", f"Built {len(plans.plans)} plan(s). {listing}. {' '.join(plans.notes)}".strip())
+    return plans
+
+
+def _in_words(findings: list[WebFinding]) -> str:
+    """One readable line for the log. Checks that failed together are reported once."""
+    ran = [f"{policy.CHECK_NAMES[f.check_type].capitalize()}: {f.summary}" for f in findings if f.severity != "check_failed"]
+    failed = [finding for finding in findings if finding.severity == "check_failed"]
+    if failed:
+        ran.append(f"{len(failed)} check(s) could not be completed. {failed[0].summary}")
+    return " ".join(ran)
+
+
+def web_checks(record: RequestRecord, plans: list[Plan]) -> tuple[list[Plan], list[WebFinding], list[Alternative]]:
+    """Step 4: check the best plan on the live web. A blocker removes the plan and the next is checked."""
+    removed: list[Alternative] = []
+    while True:
+        top = plans[0]
+        findings = plan_checks.for_plan(record.request, top)
+        state.log(record.id, "web_checks", f"Web checks for Plan {top.id}: {_in_words(findings)}",
+                  findings=[finding.model_dump(mode="json") for finding in findings])
+        blockers = [finding for finding in findings if finding.severity == "blocker"]
+        if not blockers or len(plans) == 1:
+            return plans, findings, removed
+        removed.append(Alternative(plan=top, why_not=f"Removed after a web check: {blockers[0].summary}"))
+        state.log(record.id, "web_checks", f"Plan {top.id} was removed because a web check found a serious problem.")
+        plans = plans[1:]
+
+
+def choose_and_explain(record: RequestRecord, plans: list[Plan], findings: list[WebFinding], removed: list[Alternative]) -> None:
+    """Step 5: code has ranked the plans; the language model only words the explanation."""
+    chosen, request, decision = plans[0], record.request, record.decision
+    others = [Alternative(plan=plan, why_not=planner.why_not(chosen, plan, request)) for plan in plans[1:]]
+    decision.chosen_plan, decision.alternatives, decision.web_findings = chosen, others + removed, findings
+    decision.explanation, problem = explain.write(request, chosen, decision.alternatives, findings)
+    note = f" (Explanation written from a template: {problem})" if problem else ""
+    # Keep the supplier's signed offers for the chosen lines: proof of what the agent was told.
+    state.log(record.id, "choose", f"Chose Plan {chosen.id}: {chosen.label}, {chosen.total:.2f} EUR.{note}",
+              signed_offers={line.offer.product_id: line.offer.offer_jwt for line in chosen.lines})
+
+
+def policy_check(record: RequestRecord) -> None:
+    """Step 6: ordinary code decides between ordering, asking a person, and refusing."""
+    decision = record.decision
+    decision.policy_result = policy.evaluate(record.request, decision.chosen_plan, decision.web_findings, state.policy)
+    words = {"auto_approve": "the agent may order on its own", "needs_approval": "a person must approve", "deny": "refused"}
+    state.log(record.id, "policy", f"Rules checked: {words[decision.policy_result.outcome]}. "
+              + " ".join(decision.policy_result.reasons), policy=state.policy.model_dump(mode="json"))
+
+
+def _wait_for_person(record: RequestRecord) -> None:
+    record.approval_token = secrets.token_urlsafe(16)
+    record.decision.status = "awaiting_approval"
+    state.log(record.id, "approval", "Waiting for a person to approve or reject.")
+
+
+def _replan(record: RequestRecord, change: str) -> None:
+    """Exception 4: something moved between the decision and the order."""
+    record.replans += 1
+    state.log(record.id, "recheck", f"Re-check just before ordering: {change} No order was placed; planning again with fresh offers.")
+    if record.replans > MAX_REPLANS:
+        fail(record, "recheck", f"Prices or stock changed {record.replans} times in a row while ordering.")
+        return
+    try:
+        record.offers = lookup_step.refresh(record.request, record.candidate_ids)
+    except (GatewayError, GatewayRefused) as error:
+        fail(record, "recheck", f"The supplier could not answer. {error}")
+        return
+    decide(record)
+
+
+def act(record: RequestRecord, approved_by_person: bool = False) -> None:
+    """Step 7: order, ask a person, or stop. Ordering always starts with a live re-check."""
+    decision = record.decision
+    if decision.policy_result.outcome == "deny":
+        decision.status, decision.message = "rejected", f"Stopped by the rules. {NOTHING_ORDERED}"
+        state.log(record.id, "order", decision.message)
+        return
+    if decision.policy_result.outcome == "needs_approval" and not approved_by_person:
+        return _wait_for_person(record)
+    try:
+        confirmation = ordering.place(record.request, decision.chosen_plan, state.policy, approved_by_person)
+    except ordering.Replan as change:
+        return _replan(record, str(change))
+    except ordering.SupplierWantsAPerson as refusal:
+        reason = f"Supplier's check: Valio's gateway did not accept the agent's standing authority for this order ({refusal})."
+        decision.policy_result = PolicyResult(outcome="needs_approval", reasons=[reason])
+        state.log(record.id, "order", f"{reason} No order was placed.")
+        return _wait_for_person(record)
+    except (GatewayError, GatewayRefused) as error:
+        return fail(record, "order", f"The order could not be placed. {error}")
+    decision.order_confirmation, decision.status = confirmation, "ordered"
+    who = "approved and signed by a person" if confirmation.flow == "human_present" else "signed by the agent within its standing limits"
+    receipts = "The supplier's signed receipts were checked." if confirmation.receipts_verified else "Receipts were not re-checked."
+    state.log(record.id, "order", f"Order {confirmation.order_id} placed for {confirmation.total:.2f} EUR, {who} (AP2). {receipts}",
+              confirmation=confirmation.model_dump(mode="json"))
+
+
+def finalise(record: RequestRecord) -> None:
+    """Step 8: the closing entry. The Decision itself already lives in the state."""
+    endings = {
+        "ordered": "Finished: the order is placed.", "awaiting_approval": "Paused: waiting for a person.",
+        "needs_clarification": "Paused: waiting for an answer to the question.",
+        "rejected": f"Finished: rejected. {NOTHING_ORDERED}", "failed": f"Finished: failed. {NOTHING_ORDERED}",
+    }
+    state.log(record.id, "finalise", endings.get(record.decision.status, f"Finished with status {record.decision.status}."),
+              decision=state.without_signatures(record.decision.model_dump(mode="json")))
+    if record.product_key and record.decision.status == "failed":
+        # A failed run should not silence the shelf: the next "low" event may try again.
+        state.shelf[record.product_key].armed = True
+
+
+def decide(record: RequestRecord) -> None:
+    """Steps 3 to 7. Also run again after a re-check finds a change."""
+    plans = build_plans(record)
+    if plans is None:
+        return
+    remaining, findings, removed = web_checks(record, plans.plans)
+    choose_and_explain(record, remaining, findings, removed)
+    policy_check(record)
+    act(record)

@@ -1,0 +1,19 @@
+# Secrets: never commit
+.env
+
+# Runtime data: catalogue downloads, logs, signing keys, order ledger
+data/
+
+# The 87 MB catalogue file from the Valio resource portal
+valio_aimo_junction26_product_data.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

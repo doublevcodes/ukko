@@ -1,0 +1,28 @@
+# Install with:  uv pip install -r requirements.txt   (inside the Python 3.12 venv)
+
+fastapi
+uvicorn
+pydantic>=2
+httpx
+python-dotenv
+PyYAML
+pytest
+
+# LLM (Gemini), web checks (Exa), agent interface (MCP)
+google-genai
+exa-py
+mcp
+
+# Signatures for offers, checkouts and receipts
+cryptography
+jwcrypto
+
+# QR code for the phone approval link
+segno
+
+# Sensor helper (sensor/send_event.py depends only on this)
+requests
+
+# AP2 (Agent Payments Protocol) Python SDK. Not on PyPI yet, so it is pinned
+# to an exact commit of the official repository.
+ap2 @ git+https://github.com/google-agentic-commerce/AP2.git@e1ea56db72a6385bce3e5c1112b3a56ce60acb43

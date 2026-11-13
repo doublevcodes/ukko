@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valio Aimo gateway: supplier's view</title>
+<style>
+  body { font: 18px/1.45 system-ui, sans-serif; margin: 0; background: #0f1720; color: #f2f5f7; }
+  header { padding: 18px 28px; background: #16222e; border-bottom: 2px solid #2a3b4c; }
+  h1 { margin: 0; font-size: 26px; }
+  header p { margin: 4px 0 0; color: #a9b8c6; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 24px 28px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  h2 { font-size: 20px; margin: 0 0 12px; color: #8fd3ff; }
+  .entry, .order { background: #16222e; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+  .meta { color: #a9b8c6; font-size: 15px; }
+  .order b { font-size: 20px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 6px; background: #24465f; font-size: 14px; margin-left: 6px; }
+  .refused { border-left: 5px solid #ff7a7a; }
+  .placed { border-left: 5px solid #6fe39a; }
+  a { color: #8fd3ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Valio Aimo agent gateway: supplier's view</h1>
+  <p>What outside agents looked up and ordered, as the supplier sees it. Interface description: <a href="/docs">/docs</a></p>
+</header>
+<main>
+  <section><h2>Orders</h2><div id="orders">Loading…</div></section>
+  <section><h2>Agent activity</h2><div id="log">Loading…</div></section>
+</main>
+<script>
+const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const time = (iso) => new Date(iso).toLocaleTimeString("en-GB");
+
+async function refresh() {
+  try {
+    const [orders, log] = await Promise.all([fetch("/orders").then((r) => r.json()), fetch("/log?limit=60").then((r) => r.json())]);
+    document.getElementById("orders").innerHTML = orders.orders.map((o) => `
+      <div class="order placed"><b>${esc(o.order_id)}</b> <span class="tag">${o.flow === "human_present" ? "approved by a person" : "agent, within limits"}</span>
+      <div>${esc(o.total)} ${esc(o.currency)} for ${esc(o.buyer_id)}</div>
+      <div class="meta">${o.lines.map((l) => `${l.quantity} × ${esc(l.name)}, delivery ${esc(l.delivery_date)}`).join("<br>")}</div>
+      <div class="meta">${time(o.placed_at)} · ${esc(o.payment_method)}</div></div>`).join("") || "<p class='meta'>No orders yet.</p>";
+    document.getElementById("log").innerHTML = log.entries.map((e) => `
+      <div class="entry ${e.event.includes("refused") ? "refused" : e.event === "order_placed" ? "placed" : ""}">
+      ${esc(e.summary)}<div class="meta">${time(e.timestamp)} · ${esc(e.agent)}</div></div>`).join("");
+  } catch (error) {
+    document.getElementById("log").textContent = "Cannot reach the gateway.";
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

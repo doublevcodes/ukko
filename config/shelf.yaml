@@ -1,0 +1,33 @@
+# Products the camera watches, and how each one is reordered.
+#
+# product_id        the exact Valio product on the shelf
+# reorder_quantity  how much to order when the shelf runs low
+# unit              l (litres), kg (kilos) or pcs (sales units as Valio sells them)
+# usual_quantity    the normal order size, used by the "unusually large" rule
+# constraints       hard requirements; a substitute must meet them too
+# preferences       nice to have
+# lead_time_days    the order is needed this many days after the shelf runs low
+# search_terms      keywords for finding substitutes in the catalogue
+
+products:
+  milk_lactose_free:
+    name: "Lactose-free semi-skimmed milk 1 L (Arla, UHT)"
+    product_id: "469363"
+    reorder_quantity: 400
+    unit: l
+    usual_quantity: 400
+    constraints: [FREE_FROM_LACTOSE]
+    preferences: []
+    lead_time_days: 3
+    search_terms: "semi skimmed milk"
+
+  oat_drink:
+    name: "Oat drink barista 1 L (Oatly iKaffe)"
+    product_id: "464320"
+    reorder_quantity: 60
+    unit: l
+    usual_quantity: 60
+    constraints: [VEGAN]
+    preferences: []
+    lead_time_days: 3
+    search_terms: "oat drink"

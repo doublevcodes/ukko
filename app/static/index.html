@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stockpot · Prep OS</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/os.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">S</span>
+      <div><div class="brand-name">Stockpot <span>Prep OS</span></div><div class="small" id="venue"></div></div>
+    </div>
+    <div class="telemetry-bar" id="telemetry"></div>
+    <span id="chips"></span>
+    <div class="segmented" id="mode"></div>
+    <button class="quiet" id="open-rules">Rules</button>
+  </header>
+
+  <main>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="workspace">
+      <section class="card">
+        <div class="card-head">
+          <div><div class="eyebrow">Restaurant inventory</div><h2>Replenishment needed</h2></div>
+          <span id="mode-badge"></span>
+        </div>
+        <div class="tiles" id="replenishment"></div>
+        <form id="request-form" class="ask">
+          <input type="text" id="request-text" placeholder="What do you need? e.g. 20 kg of butter by Friday, organic if possible" maxlength="500" autocomplete="off">
+          <button type="submit" class="primary">Ask Stockpot</button>
+        </form>
+        <span id="request-error" class="error"></span>
+        <div class="tabs" id="requests"></div>
+        <div id="decision"></div>
+      </section>
+
+      <div class="stack">
+        <section class="card" id="camera-panel">
+          <div class="card-head">
+            <div><h2>Live camera</h2></div>
+            <div class="tabs" id="camera-tabs"></div>
+          </div>
+          <div class="viewport" id="camera-viewport">
+            <!-- Live MJPEG feed is mounted here by drawCamera (when the camera connects, not on every poll). -->
+            <div id="live-camera-slot">
+              <div class="viewport-empty"><b>Camera feed not connected yet</b><span>This space is reserved for the live shelf view.</span></div>
+            </div>
+            <!-- One clickable box per product the vision model found in the picture (drawOverlay). -->
+            <div id="camera-overlay"></div>
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <span class="viewport-tag" id="camera-tag"></span>
+          </div>
+          <div id="camera-telemetry"></div>
+        </section>
+      </div>
+    </div>
+
+    <section class="card" id="inventory">
+      <div class="card-head">
+        <div><h2>Inventory <span class="small">the camera-watched shelf</span></h2></div>
+        <div class="filters">
+          <input type="search" id="inventory-search" placeholder="Search products" autocomplete="off">
+          <select id="inventory-status" aria-label="Status">
+            <option value="">All statuses</option>
+            <option value="critical">Critical</option>
+            <option value="reorder">Reorder</option>
+            <option value="unseen">Not seen yet</option>
+            <option value="ok">OK</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Product</th><th>Status</th><th>Shelf level</th><th class="num">Camera confidence</th>
+            <th>Last reading</th><th class="num">Proposed</th>
+          </tr></thead>
+          <tbody id="inventory-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="columns">
+      <section class="card"><h2>Orders</h2><div id="orders"></div></section>
+      <section class="card"><h2>Activity</h2><div id="activity" class="scroll"></div></section>
+      <section class="card"><h2>Data feeding the model</h2><div id="sources"></div></section>
+    </div>
+  </main>
+
+  <dialog id="rules">
+    <h2>Rules: what needs a person's approval</h2>
+    <form id="rules-form">
+      <label>Orders above this total need approval (EUR, excluding VAT)
+        <input type="number" name="auto_approve_max_total_eur" min="0" step="1" required></label>
+      <label>A quantity more than this many times the usual amount needs approval
+        <input type="number" name="max_quantity_multiplier_vs_usual" min="0.1" step="0.1" required></label>
+      <label>The most the agent may spend in total on its own (EUR)
+        <input type="number" name="agent_budget_eur" min="0" step="1" required></label>
+      <label>Product groups the agent may buy on its own</label>
+      <div id="rule-categories"></div>
+      <label class="check"><input type="checkbox" name="substitutes_require_approval"> Substitutes need approval</label>
+      <label class="check"><input type="checkbox" name="late_delivery_requires_approval"> Late delivery needs approval</label>
+      <label class="check"><input type="checkbox" name="web_caution_requires_approval"> A web-check caution needs approval</label>
+      <label class="check"><input type="checkbox" name="web_check_failed_requires_approval"> A failed web check needs approval</label>
+      <p class="small">Saving makes the manager key sign new standing limits for the agent (AP2). The supplier enforces them too.</p>
+      <div class="row">
+        <button type="submit" class="primary">Save rules</button>
+        <button type="button" class="quiet" id="close-rules">Cancel</button>
+        <span id="rules-error" class="error"></span>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/decision.js"></script>
+  <script src="/static/os_baseline.js"></script>
+  <script src="/static/os_panels.js"></script>
+  <script src="/static/os_camera.js"></script>
+  <script src="/static/os_inventory.js"></script>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

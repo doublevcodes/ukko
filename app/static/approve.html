@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stockpot: approve an order</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    /* A phone held in the hand: slightly larger type than the dashboard, and big buttons for thumbs. */
+    body { font-size: 16px; }
+    main { display: block; max-width: 720px; margin: 0 auto; padding: 12px; }
+    .buttons { position: sticky; bottom: 0; background: var(--card); padding: 12px 0; display: flex; gap: 12px; }
+    .buttons button { flex: 1; padding: 16px; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">S</span><div class="brand-name">Stockpot <span>Prep OS</span></div></div>
+    <span class="chip">Approval</span>
+  </header>
+  <main>
+    <section class="card">
+      <div id="content"><p>Loading…</p></div>
+      <div class="buttons" id="buttons" hidden>
+        <button class="reject" data-action="reject">Reject</button>
+        <button class="approve" data-action="approve">Approve &amp; pay</button>
+      </div>
+      <p id="error" class="error"></p>
+    </section>
+  </main>
+
+  <script src="/static/decision.js"></script>
+  <script>
+    // The address is /approve/<code>. The code works once: after a decision it is gone.
+    const code = location.pathname.split("/").pop();
+    const content = document.getElementById("content");
+    const buttons = document.getElementById("buttons");
+
+    async function load() {
+      const response = await fetch(`/phone/${code}`);
+      if (!response.ok) {
+        content.innerHTML = `<h2>This link is no longer valid</h2><p>The order was already approved or rejected, or Stockpot was restarted.</p>`;
+        return;
+      }
+      content.innerHTML = decisionHtml(await response.json());
+      buttons.hidden = false;
+    }
+
+    buttons.addEventListener("click", async (event) => {
+      const action = event.target.dataset.action;
+      if (!action) return;
+      buttons.hidden = true;
+      const response = await fetch(`/phone/${code}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, note: "" }),
+      });
+      if (!response.ok) {
+        document.getElementById("error").textContent = "That did not work. The order may already have been decided.";
+        return;
+      }
+      content.innerHTML = action === "approve"
+        ? `<h2>Approved ✓</h2><p>Your approval was signed. Stockpot is re-checking the price and stock and placing the order. Watch the dashboard for the confirmation.</p>`
+        : `<h2>Rejected</h2><p>Nothing was ordered.</p>`;
+    });
+
+    load();
+  </script>
+</body>
+</html>
