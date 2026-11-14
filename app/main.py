@@ -6,6 +6,7 @@ Dashboard: http://localhost:8000   API description: http://localhost:8000/docs
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -52,7 +53,17 @@ async def lifespan(_app: FastAPI):
     intake.wire_vision_reorders()
     camera.start()
     vision.start()
+    watcher = asyncio.create_task(_watch_forecasts())
     yield
+    watcher.cancel()
+
+
+async def _watch_forecasts() -> None:
+    """Every few minutes, order ahead for anything forecast to run out within 7 days."""
+    while True:
+        for record in await asyncio.to_thread(intake.check_forecasts):
+            asyncio.get_running_loop().run_in_executor(None, intake.run_sensor, record)
+        await asyncio.sleep(settings.FORECAST_CHECK_MINUTES * 60)
 
 
 class FreshStaticFiles(StaticFiles):

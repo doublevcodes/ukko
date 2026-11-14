@@ -13,7 +13,7 @@ import secrets
 from datetime import timedelta
 from typing import Any
 
-from app import explain, gateway_client, llm, lookup as lookup_step, ordering, parsing, planner, policy, state
+from app import explain, forecast, gateway_client, llm, lookup as lookup_step, ordering, parsing, planner, policy, state
 from app.config import ShelfProduct
 from app.gateway_client import GatewayError, GatewayRefused
 from app.models import Alternative, OrderRequest, Plan, PolicyResult, WebFinding
@@ -65,28 +65,44 @@ def parse_request(record: RequestRecord, text: str) -> bool:
     return True
 
 
+def _forecast(key: str, settings: forecast.Stocked) -> forecast.Forecast:
+    """How much to order for `key`, from its usage, bookings and what is probably on the shelf now.
+
+    The live shelf row's settings win, so the amount matches the forecast check that raised the order.
+    """
+    row = state.shelf.get(key)
+    settings = row or settings
+    level = row.level if row else None
+    stock = forecast.stock_now(settings, level, row.updated_at if row else None, forecast.rate_for(key, settings),
+                               state.now(), row.quantity if row else None)
+    return forecast.reorder(key, settings, level, state.now().date(), on_shelf=stock)
+
+
 def request_from_shelf(record: RequestRecord, product: ShelfProduct) -> bool:
-    """Step 1 (sensor): no language model; the reorder settings come from shelf.yaml."""
-    needed_by = state.now().date() + timedelta(days=product.lead_time_days)
+    """Step 1 (sensor): no language model; the settings come from shelf.yaml, the amount from app/forecast.py."""
+    today = state.now().date()
+    needed_by = today + timedelta(days=product.lead_time_days)
+    amount = _forecast(record.product_key, product)
     record.request = OrderRequest(
-        id=record.id, source="sensor", item_description=product.name, quantity=product.reorder_quantity,
+        id=record.id, source="sensor", item_description=product.name, quantity=amount.quantity,
         unit=product.unit, needed_by=needed_by, constraints=product.constraints, preferences=product.preferences,
         search_terms=product.search_terms, product_id=product.product_id, usual_quantity=product.usual_quantity,
     )
-    state.log(record.id, "parse", f"Reorder settings from shelf.yaml: {product.reorder_quantity} {product.unit} of "
-              f"{product.name}, needed by {needed_by:%a %d %b}.", request=record.request.model_dump(mode="json"))
+    state.log(record.id, "parse", f"Reorder: {amount.quantity} {product.unit} of {product.name}, "
+              f"needed by {needed_by:%a %d %b}. {amount.explanation}", forecast=amount.model_dump(mode="json"), request=record.request.model_dump(mode="json"))
     return True
 
 
 def request_from_vision(record: RequestRecord, row: state.ShelfLevel) -> bool:
     """Step 1 for a camera-recognised product: exact Valio id when known, otherwise catalogue search."""
-    quantity = row.reorder_quantity
     unit = row.unit
     lead = row.lead_time_days if row.lead_time_days is not None else 2
-    if quantity is None or unit is None:
+    if row.reorder_quantity is None or unit is None:
         fail(record, "parse", "This camera-seen product has no reorder quantity or unit configured.")
         return False
     needed_by = state.now().date() + timedelta(days=lead)
+    amount = _forecast(record.product_key, row)
+    quantity = amount.quantity
     terms = (row.search_terms or row.name).strip()
     record.request = OrderRequest(
         id=record.id, source="sensor", item_description=row.name, quantity=quantity, unit=unit,
@@ -96,13 +112,13 @@ def request_from_vision(record: RequestRecord, row: state.ShelfLevel) -> bool:
     if row.product_id:
         state.log(record.id, "parse",
                   f"Camera-seen product '{row.name}' maps to Valio {row.product_id}: "
-                  f"{quantity} {unit}, needed by {needed_by:%a %d %b}.",
-                  request=record.request.model_dump(mode="json"))
+                  f"{quantity} {unit}, needed by {needed_by:%a %d %b}. {amount.explanation}",
+                  forecast=amount.model_dump(mode="json"), request=record.request.model_dump(mode="json"))
     else:
         state.log(record.id, "parse",
                   f"Camera-seen product '{row.name}' is not an exact catalogue SKU; "
-                  f"will match the closest Valio item for {quantity} {unit}, needed by {needed_by:%a %d %b}.",
-                  request=record.request.model_dump(mode="json"))
+                  f"will match the closest Valio item for {quantity} {unit}, needed by {needed_by:%a %d %b}. "
+                  f"{amount.explanation}", forecast=amount.model_dump(mode="json"), request=record.request.model_dump(mode="json"))
     return True
 
 

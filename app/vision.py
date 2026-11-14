@@ -15,9 +15,10 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from app import camera, config, llm, settings, state
+from app import camera, config, forecast, llm, settings, state
 from app.models import Level
 from app.state import Box, Detection, RequestRecord
 
@@ -137,6 +138,10 @@ def _ensure_shelf_row(key: str, food: config.CameraFood, defaults: config.ShelfD
     row.preferences = fields["preferences"]  # type: ignore[assignment]
     row.lead_time_days = fields["lead_time_days"]  # type: ignore[assignment]
     row.search_terms = fields["search_terms"]  # type: ignore[assignment]
+    row.full_quantity = fields["full_quantity"]  # type: ignore[assignment]
+    row.low_quantity = fields["low_quantity"]  # type: ignore[assignment]
+    row.cover_days = fields["cover_days"]  # type: ignore[assignment]
+    row.typical_daily_use = fields["typical_daily_use"]  # type: ignore[assignment]
     return row
 
 
@@ -176,6 +181,8 @@ def apply_shelf_counts(
             if new_level == "full":
                 row.armed = True
                 row.low_streak = 0
+                if previous != "full":
+                    row.full_since, row.full_count = when, quantity
                 continue
             # Count consecutive low/empty looks only after a confirmed full (or mid-streak).
             # The first look (None → empty/low) does not start a streak, so foods simply not
@@ -187,6 +194,10 @@ def apply_shelf_counts(
                 continue
             row.armed = False
             row.low_streak = 0
+            if row.full_since is not None and row.full_count is not None:
+                forecast.record_cycle(key, row, row.full_since, when, new_level,
+                                      used=Decimal(str(max(0.0, row.full_count - quantity))))
+            row.full_since = row.full_count = None
             pending.append((key, row.name, new_level, row.confidence or ABSENT_CONFIDENCE))
 
     records: list[RequestRecord] = []

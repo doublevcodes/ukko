@@ -31,6 +31,10 @@ class ShelfProduct(BaseModel):
     preferences: list[str] = []
     lead_time_days: int = 2
     search_terms: str = ""
+    full_quantity: Decimal | None = None  # how much a full shelf holds; defaults to reorder_quantity
+    low_quantity: Decimal | None = None  # how much is left at "low"; defaults to a quarter of full
+    cover_days: int = 7  # days an order should last after it arrives
+    typical_daily_use: Decimal | None = None  # expected use per day, until real usage has been measured
 
 
 class ShelfDefaults(BaseModel):
@@ -43,6 +47,10 @@ class ShelfDefaults(BaseModel):
     search_terms: str = ""
     constraints: list[str] = []
     preferences: list[str] = []
+    full_quantity: Decimal | None = None
+    low_quantity: Decimal | None = None
+    cover_days: int = 7
+    typical_daily_use: Decimal | None = None
 
 
 class CameraFood(BaseModel):
@@ -57,6 +65,10 @@ class CameraFood(BaseModel):
     unit: Unit | None = None
     usual_quantity: Decimal | None = None
     lead_time_days: int | None = None
+    full_quantity: Decimal | None = None
+    low_quantity: Decimal | None = None
+    cover_days: int | None = None
+    typical_daily_use: Decimal | None = None
 
     @field_validator("product_id", mode="before")
     @classmethod
@@ -120,4 +132,8 @@ def resolved_reorder(food: CameraFood, defaults: ShelfDefaults | None = None) ->
         "constraints": list(food.constraints or defaults.constraints),
         "preferences": list(food.preferences or defaults.preferences),
         "search_terms": (food.search_terms or defaults.search_terms or food.name).strip(),
+        "full_quantity": food.full_quantity if food.full_quantity is not None else defaults.full_quantity,
+        "low_quantity": food.low_quantity if food.low_quantity is not None else defaults.low_quantity,
+        "cover_days": food.cover_days if food.cover_days is not None else defaults.cover_days,
+        "typical_daily_use": food.typical_daily_use if food.typical_daily_use is not None else defaults.typical_daily_use,
     }

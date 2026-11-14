@@ -53,6 +53,10 @@ class ShelfLevel(BaseModel):
     armed: bool = True
     # Consecutive low/empty vision looks after a full; reorder waits until this reaches CONFIRM_LOOKS.
     low_streak: int = 0
+    # When the shelf was first seen full after a refill, and how many units were visible then:
+    # the start of the usage cycle (app/forecast.py).
+    full_since: datetime | None = None
+    full_count: float | None = None
     # Reorder settings from camera_foods.yaml + shelf.yaml defaults.
     product_id: str | None = None
     reorder_quantity: Decimal | None = None
@@ -62,6 +66,10 @@ class ShelfLevel(BaseModel):
     preferences: list[str] = []
     lead_time_days: int | None = None
     search_terms: str = ""
+    full_quantity: Decimal | None = None
+    low_quantity: Decimal | None = None
+    cover_days: int = 7
+    typical_daily_use: Decimal | None = None
 
 
 class Box(BaseModel):
@@ -117,7 +125,9 @@ def load() -> None:
                 reorder_quantity=fields["reorder_quantity"], unit=fields["unit"],
                 usual_quantity=fields["usual_quantity"], constraints=fields["constraints"],
                 preferences=fields["preferences"], lead_time_days=fields["lead_time_days"],
-                search_terms=fields["search_terms"],
+                search_terms=fields["search_terms"], full_quantity=fields["full_quantity"],
+                low_quantity=fields["low_quantity"], cover_days=fields["cover_days"],
+                typical_daily_use=fields["typical_daily_use"],
             )
 
 

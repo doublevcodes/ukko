@@ -2,10 +2,20 @@
 # The camera encounter list drives which products appear on the shelf; this file
 # only supplies quantity / unit / lead time when a food does not override them.
 #
-# reorder_quantity  how much to order when the shelf runs low
+# reorder_quantity  how much to order when the shelf runs low, until usage has been measured
 # unit              l (litres), kg (kilos) or pcs (sales units as Valio sells them)
 # usual_quantity    the normal order size, used by the "unusually large" rule
 # lead_time_days    the order is needed this many days after the shelf runs low
+# full_quantity     optional: how much a full shelf holds (default: reorder_quantity)
+# low_quantity      optional: how much is left at "low" (default: a quarter of full)
+# typical_daily_use optional: expected use per day, used until real usage has been measured
+# cover_days        days an order should last after it arrives (default 7)
+#
+# The amount ordered is the average daily use x (lead_time_days + cover_days), plus
+# bookings from demand.yaml, minus what is on the shelf (the camera's count when it
+# counts pieces). Before any usage is measured, typical_daily_use stands in for it.
+# An order is also started whenever that forecast shows a product running out
+# within 7 days (app/forecast.py).
 
 defaults:
   reorder_quantity: 24
@@ -15,3 +25,5 @@ defaults:
   constraints: []
   preferences: []
   search_terms: ""
+  cover_days: 7
+  typical_daily_use: 4

@@ -44,6 +44,9 @@ CAMERA_FEED_URL = os.getenv("CAMERA_FEED_URL", "http://10.0.41.90:5000/").strip(
 # Seconds between two looks at the picture. Each look is one Gemini call, made only while a dashboard is open.
 VISION_INTERVAL_SECONDS = float(os.getenv("VISION_INTERVAL_SECONDS") or 3)
 
+# Minutes between two forecast checks that order ahead before an item runs out (app/intake.py).
+FORECAST_CHECK_MINUTES = float(os.getenv("FORECAST_CHECK_MINUTES") or 15)
+
 
 def public_base_url() -> str:
     """The address a phone on the same network can use to reach Stockpot."""

@@ -3,7 +3,7 @@
 # max_quantity_multiplier_vs_usual: more than this many times the usual amount needs a person.
 # allowed_categories: product groups the agent may buy on its own (names from categories.yaml).
 # agent_budget_eur: the most the agent may spend in total on its own; the supplier enforces it.
-auto_approve_max_total_eur: 500
+auto_approve_max_total_eur: 1000
 max_quantity_multiplier_vs_usual: 3
 allowed_categories:
 - dairy

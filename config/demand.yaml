@@ -1,0 +1,11 @@
+# Known future customer needs: bookings, events, catering.
+# Added on top of normal usage when they fall between today and the end of the
+# days the next order has to cover (lead_time_days + cover_days in shelf.yaml).
+#
+# demand:
+#   <product key from shelf.yaml>:
+#   - date: 2026-11-20
+#     quantity: 40        # in the product's unit from shelf.yaml
+#     note: "Christmas party, 80 guests"
+
+demand: {}

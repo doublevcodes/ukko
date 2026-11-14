@@ -1,43 +1,52 @@
 # Foods the shelf camera may see. Vision may only label keys from this list.
 # product_id   optional Valio catalogue id; omit when there is no exact SKU
 # search_terms keywords used to find the closest catalogue match when ordering
+# typical_daily_use  expected units used per day in a normal restaurant, until real usage is measured
 
 foods:
   hell_energy:
     name: "HELL energy drink"
     # HELL is not in the Valio catalogue; orders search for the closest energy drink.
     search_terms: "energy drink"
+    typical_daily_use: 6    # cans/day
 
   nocco:
     name: "NOCCO energy drink"
     product_id: "477151"
     search_terms: "nocco energy drink"
+    typical_daily_use: 6    # cans/day
 
   onse_tropical_blue:
     name: "Onse Isotonic Tropical Blue"
     # Onse is not in the Valio catalogue; orders search for the closest isotonic drink.
     search_terms: "isotonic energy drink"
+    typical_daily_use: 3    # bottles/day
 
   onse_peachy_mango:
     name: "Onse Isotonic Peachy Mango"
     search_terms: "isotonic energy drink"
+    typical_daily_use: 3    # bottles/day
 
   onse_green_lemon_lime:
     name: "Onse Isotonic Green Lemon and Lime"
     search_terms: "isotonic energy drink"
+    typical_daily_use: 3    # bottles/day
 
   profeel_chocolate:
     name: "Valio PROfeel protein drink chocolate"
     product_id: "464797"
     search_terms: "profeel protein drink chocolate"
     constraints: [FREE_FROM_LACTOSE]
+    typical_daily_use: 4    # bottles/day
 
   estrella_spicy_cheddar:
     name: "Estrella Spicy Cheddar crisps"
     # Estrella crisps are not in the Valio catalogue.
     search_terms: "cheddar crisps"
+    typical_daily_use: 8    # bags/day, bar snacks and sides
 
   nescafe_latte:
     name: "Nescafé Latte can"
     # No Nescafé latte can in the catalogue; orders search for a close coffee milk drink.
     search_terms: "latte coffee drink"
+    typical_daily_use: 5    # cans/day
