@@ -75,7 +75,6 @@ function drawDecision() {
     const total = request.decision.chosen_plan ? " " + money(request.decision.chosen_plan.total) : "";
     actions = `
       <div class="approval">
-        ${request.approval ? request.approval.qr_svg : ""}
         <div class="approval-body">
           <b>Needs approval</b>
           <input type="text" id="note" placeholder="Note (optional)" maxlength="300">

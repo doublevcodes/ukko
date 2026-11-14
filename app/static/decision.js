@@ -20,9 +20,15 @@ const SEVERITY_ORDER = ["blocker", "check_failed", "caution", "none"];  // worst
 
 const pill = (kind, text) => `<span class="pill ${esc(kind)}">${esc(text)}</span>`;
 const statusPill = (status) => pill(status, STATUS_WORDS[status] || status);
-// What one sales unit is: "1 L", "0.5 kg", or the supplier's own unit code when the size is unknown.
-const packLabel = (offer) => (offer.pack_size && offer.pack_unit
-  ? `${amount(offer.pack_size)} ${offer.pack_unit === "KG" ? "kg" : "L"}` : offer.sales_unit || "unit");
+// What one sales unit is: "24-pack", "1 L", or the supplier's unit code when the size is unknown.
+const packLabel = (offer) => {
+  const pieces = Number(offer.pieces_per_sales_unit);
+  if (pieces > 1) return `${pieces}-pack`;
+  const named = /(?:^|\s)(\d+)\s*[x×]\s*\d/i.exec(offer.name || "") || /\d+(?:[.,]\d+)?\s*(?:ml|cl|l|g|kg)\s*[x×]\s*(\d+)\b/i.exec(offer.name || "");
+  if (named) return `${named[1]}-pack`;
+  if (offer.pack_size && offer.pack_unit) return `${amount(offer.pack_size)} ${offer.pack_unit === "KG" ? "kg" : "L"}`;
+  return offer.sales_unit || "unit";
+};
 
 function planTable(plan) {
   const rows = plan.lines.map((line) => `

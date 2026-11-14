@@ -73,10 +73,8 @@ td.muted { color: var(--muted); }
 .confirmation { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--green) 14%, transparent); border: 1px solid color-mix(in srgb, var(--green) 45%, transparent); }
 .order-summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .order-value { font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.2; }
-.approval { display: flex; gap: 10px; align-items: center; flex: 1 1 280px; max-width: 480px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); border-radius: 8px; }
-/* The QR code is drawn in black, so it needs its own white square on the dark page. */
-.approval svg { flex: none; width: 72px; height: 72px; background: #fff; border-radius: 6px; }
-.approval-body { flex: 1; min-width: 0; }
+.approval { flex: 1 1 280px; max-width: 480px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); border-radius: 8px; }
+.approval-body { min-width: 0; }
 .approval input { margin-top: 6px; padding: 6px 8px; }
 .approval .row { justify-content: flex-end; margin-top: 4px; }
 .approval button { padding: 6px 10px; white-space: nowrap; }

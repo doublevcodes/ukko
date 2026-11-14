@@ -48,3 +48,16 @@ def test_single_can_sales_unit_stays_one_to_one():
     offer = _offer(pieces_per_sales_unit=Decimal(1), sales_unit="ST", name="Monster Energy can 0,5 L")
     request = _request(10, "pcs")
     assert offer_rules.units_for(offer, request, request.quantity) == 10
+
+
+def test_twelve_cans_need_one_pack_even_when_pieces_field_is_missing():
+    """Regression: without pieces_per_sales_unit, 12 NOCCOs became 12×24-packs (288 cans)."""
+    offer = _offer(pieces_per_sales_unit=Decimal(1), name="NOCCO BCAA Arancia carbonated energy drink 24x330ml")
+    request = _request(12, "pcs")
+    assert offer_rules.pieces_from_name(offer.name) == Decimal(24)
+    assert offer_rules.units_for(offer, request, request.quantity) == 1
+
+
+def test_pack_count_also_reads_size_times_count_names():
+    assert offer_rules.pieces_from_name("XL Energy Drink Classic energy drink 250ml x 24") == Decimal(24)
+    assert offer_rules.pieces_from_name("Monster Energy can 0,5 L") is None

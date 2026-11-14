@@ -7,11 +7,9 @@ Dashboard: http://localhost:8000   API description: http://localhost:8000/docs
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-import segno
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -108,11 +106,6 @@ def typed_request(body: TypedRequest, tasks: BackgroundTasks) -> dict[str, Any]:
     return {"request_id": record.id}
 
 
-@lru_cache(maxsize=64)
-def _qr(url: str) -> str:
-    return segno.make(url, error="m").svg_inline(scale=4, border=2)
-
-
 @app.get("/state")
 def get_state() -> dict[str, Any]:
     """Everything the dashboard shows, in one call."""
@@ -121,8 +114,7 @@ def get_state() -> dict[str, Any]:
     for view in snapshot["requests"]:
         token = state.requests[view["id"]].approval_token if view["id"] in state.requests else None
         if token:
-            url = f"{settings.public_base_url()}/approve/{token}"
-            view["approval"] = {"url": url, "qr_svg": _qr(url)}
+            view["approval"] = {"url": f"{settings.public_base_url()}/approve/{token}"}
     snapshot["standing_limits"] = authority.summary()
     snapshot["category_names"] = categories.all_names()
     snapshot["health"] = health()

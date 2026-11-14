@@ -6,20 +6,48 @@ Plain code shared by the planner and the substitute ranking.
 from __future__ import annotations
 
 import math
+import re
 from decimal import Decimal
 
 from app.models import Offer, OrderRequest
 
 UNIT_WORDS = {"l": "litre", "kg": "kilo", "pcs": "piece"}
 PACK_UNIT_FOR = {"l": "L", "kg": "KG"}
+# "24x330ml", "24 x 330 ml", "250ml x 24" — count of cans/bottles in one sales unit.
+_PACK_COUNT = re.compile(
+    r"(?:(\d+)\s*[x×]\s*\d+(?:[.,]\d+)?\s*(?:ml|cl|dl|l|g|kg)\b)"
+    r"|(?:\d+(?:[.,]\d+)?\s*(?:ml|cl|dl|l|g|kg)\s*[x×]\s*(\d+)\b)",
+    re.IGNORECASE,
+)
+
+
+def pieces_from_name(name: str) -> Decimal | None:
+    """How many pieces one sales unit holds, read from names like '24x330ml'."""
+    match = _PACK_COUNT.search(name or "")
+    if not match:
+        return None
+    count = match.group(1) or match.group(2)
+    pieces = Decimal(count)
+    return pieces if pieces > 1 else None
+
+
+def pieces_per_unit(offer: Offer) -> Decimal:
+    """Cans/bottles/items in one wholesaler sales unit.
+
+    Prefer the supplier's figure. If it is missing or 1, fall back to the pack
+    count in the product name so "12 cans" never becomes twelve 24-packs.
+    """
+    pieces = offer.pieces_per_sales_unit if offer.pieces_per_sales_unit > 0 else Decimal(1)
+    if pieces > 1:
+        return pieces
+    return pieces_from_name(offer.name) or pieces
 
 
 def per_sales_unit(offer: Offer, request: OrderRequest) -> Decimal | None:
     """How much of the request's unit one sales unit covers (None if it cannot be compared)."""
     if request.unit == "pcs":
         # Buyer counts cans/bottles/items; the wholesaler sells multi-packs (e.g. 24×330 ml).
-        pieces = offer.pieces_per_sales_unit if offer.pieces_per_sales_unit > 0 else Decimal(1)
-        return pieces
+        return pieces_per_unit(offer)
     if offer.pack_unit == PACK_UNIT_FOR[request.unit] and offer.pack_size and offer.pack_size > 0:
         return offer.pack_size
     return None
