@@ -1,0 +1,43 @@
+# Foods the shelf camera may see. Vision may only label keys from this list.
+# product_id   optional Valio catalogue id; omit when there is no exact SKU
+# search_terms keywords used to find the closest catalogue match when ordering
+
+foods:
+  hell_energy:
+    name: "HELL energy drink"
+    # HELL is not in the Valio catalogue; orders search for the closest energy drink.
+    search_terms: "energy drink"
+
+  nocco:
+    name: "NOCCO energy drink"
+    product_id: "477151"
+    search_terms: "nocco energy drink"
+
+  onse_tropical_blue:
+    name: "Onse Isotonic Tropical Blue"
+    # Onse is not in the Valio catalogue; orders search for the closest isotonic drink.
+    search_terms: "isotonic energy drink"
+
+  onse_peachy_mango:
+    name: "Onse Isotonic Peachy Mango"
+    search_terms: "isotonic energy drink"
+
+  onse_green_lemon_lime:
+    name: "Onse Isotonic Green Lemon and Lime"
+    search_terms: "isotonic energy drink"
+
+  profeel_chocolate:
+    name: "Valio PROfeel protein drink chocolate"
+    product_id: "464797"
+    search_terms: "profeel protein drink chocolate"
+    constraints: [FREE_FROM_LACTOSE]
+
+  estrella_spicy_cheddar:
+    name: "Estrella Spicy Cheddar crisps"
+    # Estrella crisps are not in the Valio catalogue.
+    search_terms: "cheddar crisps"
+
+  nescafe_latte:
+    name: "Nescafé Latte can"
+    # No Nescafé latte can in the catalogue; orders search for a close coffee milk drink.
+    search_terms: "latte coffee drink"

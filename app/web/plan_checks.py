@@ -10,7 +10,7 @@ from app.models import OrderRequest, Plan, WebFinding
 from app.web import exa_checks
 
 MAX_CONSTRAINTS_CHECKED = 2  # per substitute, to keep the demo fast and save credits
-PER = {"l": "litre", "kg": "kilo", "pcs": "pack"}
+PER = {"l": "litre", "kg": "kilo", "pcs": "piece"}
 _pool = ThreadPoolExecutor(max_workers=6, thread_name_prefix="webcheck")
 
 

@@ -51,6 +51,7 @@ def _sign_standing_limits(reason: str) -> None:
 async def lifespan(_app: FastAPI):
     state.load()
     _sign_standing_limits("Stockpot started.")
+    intake.wire_vision_reorders()
     camera.start()
     vision.start()
     yield

@@ -104,12 +104,13 @@ def _to_offer(raw: dict[str, Any]) -> Offer:
         raise GatewayError("An offer from the supplier failed its signature check.") from error
     if signed.get("offer_id") != raw.get("offer_id") or signed.get("unit_price") != raw.get("unit_price"):
         raise GatewayError("An offer from the supplier does not match its own signature.")
+    fields = {key: raw.get(key) for key in (
+        "product_id", "unit_price", "pack_size", "pack_unit", "available_quantity", "earliest_delivery",
+        "offer_id", "expires_at", "offer_jwt", "comparison_price", "not_orderable_reason", "order_cutoff",
+        "brand", "delivery_reliability", "co2_kg_per_kg", "kg_per_sales_unit", "pieces_per_sales_unit",
+    ) if raw.get(key) is not None}
     return Offer(
-        **{key: raw.get(key) for key in (
-            "product_id", "unit_price", "pack_size", "pack_unit", "available_quantity", "earliest_delivery",
-            "offer_id", "expires_at", "offer_jwt", "comparison_price", "not_orderable_reason", "order_cutoff",
-            "brand", "delivery_reliability", "co2_kg_per_kg", "kg_per_sales_unit",
-        )},
+        **fields,
         name=raw.get("name") or f"Product {raw['product_id']}",
         attributes=raw.get("claims") or [], labels=raw.get("labels") or [],
         sales_unit=raw.get("sales_unit") or "", orderable=bool(raw.get("orderable")),

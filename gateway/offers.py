@@ -63,8 +63,10 @@ def _build_offer(product_id: str, availability: dict | None, price: dict | None,
                 "not_orderable_reason": "This product is not in the catalogue."}
     offer = product.model_dump(exclude={"id", "name_fi", "base_units_per_sales_unit", "base_unit_litres", "base_unit_kg"})
     offer = {"product_id": product.id, **offer, **read_availability(availability, now)}
+    pieces = max(Decimal(1), Decimal(str(product.base_units_per_sales_unit or 1)))
     offer |= {"currency": settings.CURRENCY, "unit_price": None, "pack_size": None, "pack_unit": None,
-              "comparison_price": None, "vat_rate": None, "kg_per_sales_unit": None}
+              "comparison_price": None, "vat_rate": None, "kg_per_sales_unit": None,
+              "pieces_per_sales_unit": str(pieces)}
 
     unit_price = None if not price or price.get("error") else _money(price.get("catalogPrice"))
     if unit_price is None or unit_price <= 0:

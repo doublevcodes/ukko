@@ -6,9 +6,10 @@ returns at once and the dashboard shows progress as it polls.
 
 from __future__ import annotations
 
+import threading
 from typing import Callable
 
-from app import config, pipeline, state
+from app import config, pipeline, state, vision
 from app.models import SensorEvent
 from app.state import RequestRecord
 
@@ -78,12 +79,47 @@ def sensor_event(event: SensorEvent) -> tuple[str, RequestRecord | None]:
     return "request created", record
 
 
+def _reorder_from_shelf_row(record: RequestRecord) -> bool:
+    """Build the order request from a camera/sensor shelf row (exact id or catalogue search)."""
+    key = record.product_key
+    if not key:
+        pipeline.fail(record, "parse", "The reorder had no product key.")
+        return False
+    configured = config.load_shelf().get(key)
+    with state.lock:
+        row = state.shelf.get(key)
+    if configured is not None:
+        return pipeline.request_from_shelf(record, configured)
+    if row is not None:
+        return pipeline.request_from_vision(record, row)
+    pipeline.fail(record, "parse", f"No shelf row left for '{key}'.")
+    return False
+
+
 def run_sensor(record: RequestRecord) -> None:
     def work() -> None:
-        product = config.load_shelf()[record.product_key]
-        if pipeline.request_from_shelf(record, product) and pipeline.lookup(record):
+        if _reorder_from_shelf_row(record) and pipeline.lookup(record):
             pipeline.decide(record)
     _guarded(record, work)
+
+
+def run_vision_reorder(record: RequestRecord) -> None:
+    """Reorder from a vision low/empty reading: exact Valio id when known, else closest catalogue match."""
+    def work() -> None:
+        if _reorder_from_shelf_row(record) and pipeline.lookup(record):
+            pipeline.decide(record)
+    _guarded(record, work)
+
+
+def _start_vision_reorders(records: list[RequestRecord]) -> None:
+    for record in records:
+        threading.Thread(target=run_vision_reorder, args=(record,), name=f"vision-reorder-{record.id}",
+                         daemon=True).start()
+
+
+def wire_vision_reorders() -> None:
+    """Let the vision loop start reorders without going through HTTP."""
+    vision.set_reorder_handler(_start_vision_reorders)
 
 
 def claim_approval(record: RequestRecord) -> bool:

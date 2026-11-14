@@ -47,14 +47,21 @@ class ShelfLevel(BaseModel):
     confidence: float | None = None
     updated_at: datetime | None = None
     device_id: str | None = None
+    # How many units the laptop vision model can see right now (app/vision.py). None before the first look.
+    quantity: float | None = None
     # False after a request was raised for this product; True again once the shelf is seen full.
     armed: bool = True
-    # Reorder settings copied from config/shelf.yaml, so the dashboard's inventory table can show them.
+    # Consecutive low/empty vision looks after a full; reorder waits until this reaches CONFIRM_LOOKS.
+    low_streak: int = 0
+    # Reorder settings from camera_foods.yaml + shelf.yaml defaults.
     product_id: str | None = None
     reorder_quantity: Decimal | None = None
     unit: Unit | None = None
+    usual_quantity: Decimal | None = None
     constraints: list[str] = []
+    preferences: list[str] = []
     lead_time_days: int | None = None
+    search_terms: str = ""
 
 
 class Box(BaseModel):
@@ -72,6 +79,7 @@ class Detection(BaseModel):
     product_key: str
     name: str
     box: Box
+    quantity: float = 1  # estimated units inside the box (may be fractional when the model is unsure)
     confidence: float
     updated_at: datetime
 
@@ -89,19 +97,27 @@ def now() -> datetime:
 
 
 def load() -> None:
-    """Read the config files and start with an empty list of requests."""
+    """Read the config files and start with an empty list of requests.
+
+    Shelf rows are seeded from the camera encounter list (config/camera_foods.yaml),
+    with reorder fields filled from that file plus shelf.yaml defaults.
+    """
     global policy
+    defaults = config.load_shelf_defaults()
     with lock:
         policy = config.load_policy()
         requests.clear()
         audit.clear()
         detections.clear()
         shelf.clear()
-        for key, product in config.load_shelf().items():
+        for key, food in config.load_camera_foods().items():
+            fields = config.resolved_reorder(food, defaults)
             shelf[key] = ShelfLevel(
-                product_key=key, name=product.name, product_id=product.product_id,
-                reorder_quantity=product.reorder_quantity, unit=product.unit,
-                constraints=product.constraints, lead_time_days=product.lead_time_days,
+                product_key=key, name=food.name, product_id=food.product_id,
+                reorder_quantity=fields["reorder_quantity"], unit=fields["unit"],
+                usual_quantity=fields["usual_quantity"], constraints=fields["constraints"],
+                preferences=fields["preferences"], lead_time_days=fields["lead_time_days"],
+                search_terms=fields["search_terms"],
             )
 
 

@@ -1,11 +1,11 @@
-"""Read and write the files in config/: policy rules and shelf products."""
+"""Read and write the files in config/: policy rules, shelf defaults, and camera foods."""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app import settings
 from app.models import PolicyConfig, Unit
@@ -20,7 +20,7 @@ POLICY_HEADER = (
 
 
 class ShelfProduct(BaseModel):
-    """One watched product from config/shelf.yaml."""
+    """One watched product from config/shelf.yaml (optional overrides; mostly unused now)."""
 
     name: str
     product_id: str
@@ -31,6 +31,39 @@ class ShelfProduct(BaseModel):
     preferences: list[str] = []
     lead_time_days: int = 2
     search_terms: str = ""
+
+
+class ShelfDefaults(BaseModel):
+    """Reorder settings for camera-recognised foods that do not override them."""
+
+    reorder_quantity: Decimal = Decimal(24)
+    unit: Unit = "pcs"
+    usual_quantity: Decimal | None = Decimal(24)
+    lead_time_days: int = 2
+    search_terms: str = ""
+    constraints: list[str] = []
+    preferences: list[str] = []
+
+
+class CameraFood(BaseModel):
+    """One food the shelf camera may see (config/camera_foods.yaml)."""
+
+    name: str
+    product_id: str | None = None
+    search_terms: str = ""
+    constraints: list[str] = []
+    preferences: list[str] = []
+    reorder_quantity: Decimal | None = None
+    unit: Unit | None = None
+    usual_quantity: Decimal | None = None
+    lead_time_days: int | None = None
+
+    @field_validator("product_id", mode="before")
+    @classmethod
+    def _blank_product_id(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        return value
 
 
 def load_policy() -> PolicyConfig:
@@ -52,8 +85,39 @@ def save_policy(policy: PolicyConfig) -> None:
     settings.POLICY_FILE.write_text(text, encoding="utf-8")
 
 
-def load_shelf() -> dict[str, ShelfProduct]:
+def _shelf_file() -> dict:
     if not settings.SHELF_FILE.exists():
         return {}
-    raw = yaml.safe_load(settings.SHELF_FILE.read_text(encoding="utf-8")) or {}
+    return yaml.safe_load(settings.SHELF_FILE.read_text(encoding="utf-8")) or {}
+
+
+def load_shelf() -> dict[str, ShelfProduct]:
+    raw = _shelf_file()
     return {key: ShelfProduct(**value) for key, value in (raw.get("products") or {}).items()}
+
+
+def load_shelf_defaults() -> ShelfDefaults:
+    """Defaults for camera-recognised shelf rows."""
+    return ShelfDefaults(**(_shelf_file().get("defaults") or {}))
+
+
+def load_camera_foods() -> dict[str, CameraFood]:
+    """Foods the camera may label. Missing file means an empty encounter list."""
+    if not settings.CAMERA_FOODS_FILE.exists():
+        return {}
+    raw = yaml.safe_load(settings.CAMERA_FOODS_FILE.read_text(encoding="utf-8")) or {}
+    return {key: CameraFood(**value) for key, value in (raw.get("foods") or {}).items()}
+
+
+def resolved_reorder(food: CameraFood, defaults: ShelfDefaults | None = None) -> dict[str, object]:
+    """Merge a camera food with shelf defaults into the fields a shelf row needs to reorder."""
+    defaults = defaults or load_shelf_defaults()
+    return {
+        "reorder_quantity": food.reorder_quantity if food.reorder_quantity is not None else defaults.reorder_quantity,
+        "unit": food.unit or defaults.unit,
+        "usual_quantity": food.usual_quantity if food.usual_quantity is not None else defaults.usual_quantity,
+        "lead_time_days": food.lead_time_days if food.lead_time_days is not None else defaults.lead_time_days,
+        "constraints": list(food.constraints or defaults.constraints),
+        "preferences": list(food.preferences or defaults.preferences),
+        "search_terms": (food.search_terms or defaults.search_terms or food.name).strip(),
+    }

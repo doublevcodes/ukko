@@ -39,14 +39,17 @@ function drawHeader() {
 
 // Safe mode and Autopilot are two settings of one rule: the auto-approve spend limit.
 // Safe mode sets it to zero, so every order waits for a person. Autopilot puts the limit back.
+// Autopilot still only auto-orders exact, full, on-time plans under the limit with clear web checks.
 function drawMode() {
   const limit = Number(state.policy.auto_approve_max_total_eur);
   const button = (mode, on, label, hint) =>
     `<button data-mode="${mode}" class="${on ? "on" : ""}" title="${hint}" ${SAMPLE ? "disabled" : ""}>${label}</button>`;
   put("mode", button("safe", !limit, "Safe mode", "Every order waits for a person's approval")
-    + button("autopilot", limit, "Autopilot", "The agent orders on its own when every rule passes"));
+    + button("autopilot", limit, "Autopilot",
+      "Orders alone only when exact product, full qty, on time, under the limit, and web checks are clear"));
   put("mode-badge", limit
-    ? pill("autopilot", `Autopilot · orders alone up to ${euros(limit)}`) : pill("safe", "Safe mode · every order needs approval"));
+    ? pill("autopilot", `Autopilot · exact matches up to ${euros(limit)}`)
+    : pill("safe", "Safe mode · every order needs approval"));
 }
 
 async function setMode(mode) {
@@ -61,18 +64,10 @@ async function setMode(mode) {
   poll();
 }
 
-function drawRequests() {
-  put("requests", state.requests.map((request) => `
-    <button class="tab ${request.id === selected ? "on" : ""}" data-id="${esc(request.id)}" title="${esc(request.title)}">
-      <span class="dot ${esc(request.decision.status)}"></span><span>${esc(request.title)}</span><span class="small">${clock(request.created_at).slice(0, 5)}</span>
-    </button>`).join(""));
-}
-
 function drawDecision() {
   const request = state.requests.find((item) => item.id === selected);
   if (!request) {
-    put("decision", `<div class="eyebrow">AI procurement decision</div>
-      <p class="small">Nothing yet. Take cartons off the shelf, or type a request above.</p>`);
+    put("decision", `<p class="small">Nothing yet. Take cartons off the shelf, or type a request above.</p>`);
     return;
   }
   let actions = "";
@@ -82,10 +77,10 @@ function drawDecision() {
       <div class="approval">
         ${request.approval ? request.approval.qr_svg : ""}
         <div class="approval-body">
-          <b>This order needs a person.</b> <span class="small">Approve here, or scan to approve from a phone.</span>
+          <b>Needs approval</b>
           <input type="text" id="note" placeholder="Note (optional)" maxlength="300">
           <div class="row"><button class="reject" data-action="reject">Reject</button>
-            <button class="approve" data-action="approve">Approve &amp; pay${total}</button></div>
+            <button class="approve" data-action="approve">Approve${total}</button></div>
           <span id="approval-error" class="error"></span>
         </div>
       </div>`;
@@ -102,7 +97,7 @@ function drawDecision() {
 function draw() {
   if (state.requests[0] && state.requests[0].id !== newest) newest = selected = state.requests[0].id;
   if (!state.requests.some((request) => request.id === selected)) selected = state.requests[0]?.id || null;
-  drawHeader(); drawMode(); drawRequests(); drawDecision();
+  drawHeader(); drawMode(); drawDecision();
   drawKpis(state); drawReplenishment(state); drawCamera(state);
   drawInventory(state); drawOrders(state); drawActivity(state); drawSources(state);
 }
@@ -152,11 +147,6 @@ $("request-form").addEventListener("submit", async (event) => {
     $("request-text").value = ""; $("request-error").textContent = "";
     poll();
   } catch (error) { $("request-error").textContent = error.message; }
-});
-
-$("requests").addEventListener("click", (event) => {
-  const tab = event.target.closest(".tab");
-  if (tab) { selected = tab.dataset.id; draw(); }
 });
 
 $("decision").addEventListener("click", async (event) => {

@@ -23,6 +23,7 @@ KEYS_DIR = DATA_DIR / "keys"
 CONFIG_DIR = Path(os.getenv("STOCKPOT_CONFIG_DIR") or ROOT / "config")
 POLICY_FILE = CONFIG_DIR / "policy.yaml"
 SHELF_FILE = CONFIG_DIR / "shelf.yaml"
+CAMERA_FOODS_FILE = CONFIG_DIR / "camera_foods.yaml"
 CATEGORIES_FILE = CONFIG_DIR / "categories.yaml"
 
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://127.0.0.1:8001").rstrip("/")

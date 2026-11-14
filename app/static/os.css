@@ -25,14 +25,13 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-widt
 .tile { padding: 8px 11px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); border-left: 3px solid var(--c); }
 .tile-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile.selected { background: var(--pick); outline: 2px solid var(--sky); outline-offset: -1px; }
-.ask { display: flex; gap: 8px; margin: 16px 0 6px; }
+.ask { display: flex; gap: 8px; margin: 12px 0 0; }
 .ask button { flex: none; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .tab { display: inline-flex; align-items: center; gap: 7px; max-width: 300px; padding: 5px 11px; font-size: 13px; font-weight: 500; background: transparent; color: var(--muted); }
 .tab > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.on { border-color: var(--blue); color: var(--ink); background: color-mix(in srgb, var(--blue) 14%, transparent); }
-#requests:not(:empty) { margin-top: 8px; }
-#decision { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+#decision { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 
 /* Live camera: the slot holds the feed; the tag, the product boxes and the telemetry below are redrawn. */
 .viewport { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #07080a; border: 1px solid var(--line); }
@@ -47,10 +46,14 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-widt
 /* Product boxes over the video (os_camera.js). The layer has its own stacking order, so the boxes
    stay under the sticky top bar, and it lets clicks through everywhere except on a box. */
 #camera-overlay { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
-.hit { position: absolute; padding: 0; border: 1px solid rgba(255, 255, 255, .28); border-radius: 6px; background: transparent; pointer-events: auto;
+.hit { position: absolute; padding: 0; border: 2px solid rgba(255, 255, 255, .55); border-radius: 6px; background: transparent; pointer-events: auto;
   transition: left .35s ease, top .35s ease, width .35s ease, height .35s ease, border-color .12s, background-color .12s; }
 .hit:hover, .hit:focus-visible { border-color: #fff; outline: 2px solid #fff; outline-offset: -1px; }
 .hit.selected { border-color: var(--sky); outline: 3px solid var(--sky); outline-offset: -1px; background: var(--pick); }
+.hit-label { position: absolute; top: 4px; left: 4px; display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 6px;
+  border-radius: 4px; background: rgba(0, 0, 0, .72); color: #fff; font-size: 12px; line-height: 1.2; pointer-events: none; }
+.hit-label b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.hit-label i { font-style: normal; opacity: .85; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .hit { transition: none; } }
 .reading { display: flex; align-items: center; gap: 9px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .reading:last-child { border-bottom: 0; padding-bottom: 0; }

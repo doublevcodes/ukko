@@ -17,8 +17,8 @@ function drawCamera(state) {
   put("camera-tag", reporting.length ? pill("live", `${reporting[0].device_id} reporting`) : pill("", "No signal"));
   put("camera-telemetry", !chosen.watchesShelf ? `<p class="small">No camera is connected here yet.</p>` : state.shelf.map((item) => `
     <div class="reading ${picked(item)}" data-product-key="${esc(item.product_key)}"><span class="dot ${shelfStatus(item)}"></span><span class="grow" title="${esc(item.name)}">${esc(item.name)}</span>
-      <b>${item.level ? LEVEL_WORDS[item.level] : "Not seen yet"}</b>
-      <span class="small">${item.updated_at ? `${percent(item.confidence)} conf. · ${clock(item.updated_at)} · ${esc(item.device_id)}` : "waiting for the camera"}</span>
+      <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "Not seen yet")}</b>
+      <span class="small">${item.updated_at ? `pcs · ${percent(item.confidence)} conf. · ${clock(item.updated_at)}` : "waiting for the first look"}</span>
     </div>`).join(""));
   mountFeed(chosen.feedUrl && (state.health || {}).camera_connected ? chosen.feedUrl : null);
   drawOverlay(chosen.watchesShelf ? state.detections || [] : []);
@@ -32,11 +32,13 @@ function mountFeed(feedUrl) {
   if (!feedUrl) { slot.innerHTML = EMPTY_VIEWPORT; return; }
   const picture = document.createElement("img");
   picture.alt = "Live video of the watched shelf";
-  // The first frame tells the picture's real size, which the boxes need.
-  picture.onload = () => drawOverlay(shownDetections);
-  // If the feed cannot be opened, show the empty viewport; the next poll tries again.
+  // Size the boxes from the first decoded frame only. MJPEG can fire load on every
+  // picture; redrawing the overlay that often stalls the browser and freezes the feed.
+  picture.addEventListener("load", () => drawOverlay(shownDetections), { once: true });
+  // If the feed drops, clear the mount so the next poll opens a new stream.
   picture.onerror = () => { mountedFeed = null; slot.innerHTML = EMPTY_VIEWPORT; };
-  picture.src = feedUrl;
+  // Cache-bust so a remount after an error does not reuse a dead browser connection.
+  picture.src = `${feedUrl}${feedUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
   slot.replaceChildren(picture);
 }
 
@@ -68,17 +70,21 @@ function drawOverlay(detections) {
   while (overlay.children.length < boxes.length) {
     const hit = document.createElement("button");
     hit.type = "button"; hit.className = "hit";
+    hit.innerHTML = `<span class="hit-label"><b></b><i></i></span>`;
     overlay.append(hit);
   }
   boxes.forEach((found, index) => {
     const hit = overlay.children[index], on = found.product_key === selectedProductKey;
+    const label = hit.querySelector(".hit-label");
     for (const side of ["left", "top", "width", "height"]) hit.style[side] = `${found.place[side].toFixed(2)}%`;
     // A smaller box sits above a larger one, so a product standing in front of another stays clickable.
     hit.style.zIndex = String(1000 - Math.round(found.place.width * found.place.height / 10));
     hit.dataset.productKey = found.product_key;
-    hit.title = found.name;
-    hit.setAttribute("aria-label", `Select ${found.name}`);
+    hit.title = `${found.name} · ${qtyNum(found.quantity)} pcs · ${percent(found.confidence)}`;
+    hit.setAttribute("aria-label", `Select ${found.name}, about ${qtyNum(found.quantity)} pieces`);
     hit.setAttribute("aria-pressed", String(on));
     hit.classList.toggle("selected", on);
+    label.querySelector("b").textContent = qtyNum(found.quantity);
+    label.querySelector("i").textContent = percent(found.confidence);
   });
 }

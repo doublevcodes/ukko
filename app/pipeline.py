@@ -78,6 +78,34 @@ def request_from_shelf(record: RequestRecord, product: ShelfProduct) -> bool:
     return True
 
 
+def request_from_vision(record: RequestRecord, row: state.ShelfLevel) -> bool:
+    """Step 1 for a camera-recognised product: exact Valio id when known, otherwise catalogue search."""
+    quantity = row.reorder_quantity
+    unit = row.unit
+    lead = row.lead_time_days if row.lead_time_days is not None else 2
+    if quantity is None or unit is None:
+        fail(record, "parse", "This camera-seen product has no reorder quantity or unit configured.")
+        return False
+    needed_by = state.now().date() + timedelta(days=lead)
+    terms = (row.search_terms or row.name).strip()
+    record.request = OrderRequest(
+        id=record.id, source="sensor", item_description=row.name, quantity=quantity, unit=unit,
+        needed_by=needed_by, constraints=list(row.constraints), preferences=list(row.preferences),
+        search_terms=terms, product_id=row.product_id, usual_quantity=row.usual_quantity,
+    )
+    if row.product_id:
+        state.log(record.id, "parse",
+                  f"Camera-seen product '{row.name}' maps to Valio {row.product_id}: "
+                  f"{quantity} {unit}, needed by {needed_by:%a %d %b}.",
+                  request=record.request.model_dump(mode="json"))
+    else:
+        state.log(record.id, "parse",
+                  f"Camera-seen product '{row.name}' is not an exact catalogue SKU; "
+                  f"will match the closest Valio item for {quantity} {unit}, needed by {needed_by:%a %d %b}.",
+                  request=record.request.model_dump(mode="json"))
+    return True
+
+
 def lookup(record: RequestRecord) -> bool:
     """Step 2: search the catalogue and get live signed offers for the candidates."""
     request = record.request
@@ -88,15 +116,20 @@ def lookup(record: RequestRecord) -> bool:
         return False
     if not found.offers:
         needs = f" marked {', '.join(request.constraints)}" if request.constraints else ""
-        _ask(record, "lookup", f"I found no product{needs} matching '{request.search_terms}' in Valio's catalogue. "
-             "Can you describe it differently?")
+        nearby = next((note[len("Nearby catalogue names: "):] for note in found.notes
+                       if note.startswith("Nearby catalogue names: ")), "")
+        hint = (f" Closest names in the catalogue: {nearby}. Reply with one of those, or describe it differently."
+                if nearby else " Can you describe it differently, or name a similar product Valio sells?")
+        _ask(record, "lookup", f"I found no product{needs} matching '{request.item_description or request.search_terms}' "
+             f"in Valio's catalogue.{hint}")
         return False
     record.offers, record.candidate_ids, record.exact_id = found.offers, found.candidate_ids, found.exact_id
     orderable = sum(1 for offer in found.offers if offer.orderable)
     state.log(record.id, "lookup", f"Got live, signed offers from Valio for {len(found.offers)} products; "
               f"{orderable} can be ordered now. {' '.join(found.notes)}".strip(),
               offers=[{"product_id": o.product_id, "name": o.name, "unit_price": str(o.unit_price), "orderable": o.orderable,
-                       "available": o.available_quantity, "offer_id": o.offer_id} for o in found.offers])
+                       "available": o.available_quantity, "offer_id": o.offer_id,
+                       "pieces_per_sales_unit": str(o.pieces_per_sales_unit)} for o in found.offers])
     return True
 
 

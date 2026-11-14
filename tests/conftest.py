@@ -37,6 +37,14 @@ from gateway.main import app as gateway_app  # noqa: E402
 from tests import fakes  # noqa: E402
 
 SHELF = """
+defaults:
+  reorder_quantity: 100
+  unit: l
+  usual_quantity: 100
+  lead_time_days: 3
+  constraints: []
+  preferences: []
+  search_terms: ""
 products:
   milk_lactose_free:
     name: "Lactose-free semi-skimmed milk 1 L"
@@ -49,6 +57,18 @@ products:
     search_terms: "semi skimmed milk"
 """
 
+CAMERA_FOODS = """
+foods:
+  milk_lactose_free:
+    name: "Lactose-free semi-skimmed milk 1 L"
+    product_id: "1001"
+    search_terms: "semi skimmed milk"
+    constraints: [FREE_FROM_LACTOSE]
+  mystery_soda:
+    name: "Mystery soda"
+    search_terms: "soda soft drink"
+"""
+
 
 def _fresh_files() -> None:
     """Empty the data folder and write the fixture catalogue and shelf."""
@@ -57,6 +77,7 @@ def _fresh_files() -> None:
         (app_settings.DATA_DIR / name).unlink(missing_ok=True)
     (app_settings.DATA_DIR / "products.json").write_text(fakes.catalogue_file_content(), encoding="utf-8")
     app_settings.SHELF_FILE.write_text(SHELF, encoding="utf-8")
+    app_settings.CAMERA_FOODS_FILE.write_text(CAMERA_FOODS, encoding="utf-8")
     config.save_policy(PolicyConfig())
 
 

@@ -14,6 +14,12 @@ const LEVEL_STATUS = { full: "ok", low: "reorder", empty: "critical" };
 const STOCK_WORDS = { critical: "Critical", reorder: "Reorder", unseen: "Not seen yet", ok: "OK" };
 const euros = (value) => "€" + Math.round(Number(value)).toLocaleString("en-GB");
 const percent = (fraction) => `${Math.round(fraction * 100)}%`;
+// Vision quantity as a plain number (3 or 3.5), for tiles, readings and inventory.
+const qtyNum = (value) => {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  const rounded = Math.round(Number(value) * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
 const shelfStatus = (item) => (item.level ? LEVEL_STATUS[item.level] : "unseen");
 const waitingForApproval = (state) => state.requests.filter((request) => request.decision.status === "awaiting_approval" && request.decision.chosen_plan);
 // The class for a product's tile, camera reading and inventory row: "selected" once it was clicked in the video.
@@ -40,8 +46,8 @@ function drawKpis(state) {
 function drawReplenishment(state) {
   put("replenishment", state.shelf.map((item) => `
     <div class="tile ${shelfStatus(item)} ${picked(item)}" data-product-key="${esc(item.product_key)}" title="${esc(item.name)}"><div class="tile-name">${esc(item.name)}</div>
-      <b>${item.level ? LEVEL_WORDS[item.level] : "Not seen yet"}</b>
-      <span class="small">${item.confidence != null ? `camera ${percent(item.confidence)}` : "waiting for the camera"}</span></div>`).join("")
+      <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "Not seen yet")}</b>
+      <span class="small">${item.quantity != null ? `pcs estimated · ${percent(item.confidence)} conf.` : "waiting for the first look"}</span></div>`).join("")
     || `<p class="small">No products in config/shelf.yaml.</p>`);
 }
 
@@ -72,9 +78,9 @@ function drawSources(state) {
   const health = state.health || {};
   const badge = (ok, missing) => (ok ? pill("live", "Live") : pill("offline", missing));
   const sources = [
-    ["Storage camera + vision model", "Shelf level per watched product, with a confidence score",
+    ["Storage camera + vision model", "Visible count and confidence per watched product",
       state.shelf.some((item) => item.updated_at) ? pill("live", "Live") : pill("", "Waiting")],
-    ["Shelf video (Gemini vision)", "Where each watched product stands in the camera picture, for the clickable boxes",
+    ["Shelf video (Gemini vision)", "Where each watched product stands, and how many units are in each box",
       !health.camera_connected ? pill("offline", "No video") : !health.gemini_key_set ? pill("offline", "No key")
         : (state.detections || []).length ? pill("live", "Live") : pill("", "Nothing recognised")],
     ["Valio Aimo prices and availability", "Signed live offers, pack sizes, delivery dates and order cut-offs", badge(state.standing_limits, "Not connected")],

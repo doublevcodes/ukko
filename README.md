@@ -52,7 +52,7 @@ The header of the dashboard shows red labels if the gateway, the Gemini key or t
 ## The demo, step by step
 
 1. Open the dashboard. The Inventory table shows the milk as "Not seen yet".
-2. Take cartons off the shelf, or fake the camera: `python sensor/simulate.py --product milk_lactose_free --level low`
+2. Take cans off the shelf, or fake the camera: `python sensor/simulate.py --product hell_energy --level low`
 3. The request opens in the **Replenishment needed** card. Open "What the agent did, step by step" (or watch the
    Activity panel) for the live offers from Valio, the plans, the web checks and the rules.
 4. Only 384 of the 400 litres are in stock, so Stockpot picks plan B: the usual milk plus a substitute for the rest.
@@ -68,11 +68,12 @@ To show a typed request, use the "What do you need?" box in the Replenishment ne
 order waits for a person; Autopilot puts the earlier limit back.
 
 **Live camera.** The dashboard shows the shelf camera's video (`CAMERA_FEED_URL` in `.env`, relayed by Stockpot at
-`/camera/feed`). While a dashboard is open, Stockpot asks Gemini every few seconds where the products from
-`config/shelf.yaml` stand in the picture, and draws a box over each one it finds. Hover a box to outline it. Click it
-to highlight that product's tile, camera reading and inventory row and to show its latest request; click anywhere else
-in the picture to clear. A click never orders anything. This needs `CAMERA_FEED_URL` and `GEMINI_API_KEY`: without the
-camera there is no video, and without the key there are no boxes.
+`/camera/feed`). While a dashboard is open, Stockpot asks Gemini every few seconds where the foods from
+`config/camera_foods.yaml` stand in the picture, draws a box over each one it finds, and estimates how many units are
+visible. Edit that file to teach the camera what it may see. Each food can name an exact Valio `product_id`, or leave
+it blank so a reorder searches for the closest catalogue match. Counts and confidence update the shelf rows. A drop
+from full to low/empty can start a reorder. Hover a box to outline it; click it to highlight that product's tile and
+inventory row. This needs `CAMERA_FEED_URL` and `GEMINI_API_KEY`.
 
 Everything on the dashboard is live. To see it filled in without a sensor or any keys, open `/?sample=1` (a saved
 example of one request, with two example boxes in the camera panel).
@@ -92,7 +93,7 @@ pytest                           # the tests use a fake Valio and never touch th
 
 - **The rules decide, not the language model.** `app/policy.py` is plain code. The model only reads typed text,
   picks which search hits match it, summarises web results and words the explanation. (It also finds the products
-  in the camera picture for the dashboard; that cannot start or change an order.)
+  in the camera picture for the dashboard. A drop from full to low can start a reorder.)
 - **The agent orders alone** only when every rule passes: total within the limit, no substitute, on time, full
   quantity, usual size, an allowed product group, and web checks without concerns.
 - **A person is asked** in every other case, and a hard requirement (such as lactose-free) is never broken.

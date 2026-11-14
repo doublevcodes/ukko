@@ -14,7 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 Level = Literal["full", "low", "empty"]
-Unit = Literal["l", "kg", "pcs"]  # pcs = sales units exactly as the supplier sells them
+Unit = Literal["l", "kg", "pcs"]  # pcs = individual pieces/cans/bottles; converted to sales units via pieces_per_sales_unit
 Severity = Literal["none", "caution", "blocker", "check_failed"]
 Status = Literal["working", "needs_clarification", "awaiting_approval", "ordered", "rejected", "failed"]
 Tier = Literal["best", "better", "good"]
@@ -73,6 +73,7 @@ class Offer(BaseModel):
     delivery_reliability: float | None = None  # 0 to 1
     co2_kg_per_kg: float | None = None
     kg_per_sales_unit: Decimal | None = None
+    pieces_per_sales_unit: Decimal = Decimal(1)  # cans/bottles/items in one wholesaler sales unit (e.g. 24)
 
 
 class PlanLine(BaseModel):

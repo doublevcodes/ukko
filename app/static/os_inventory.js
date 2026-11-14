@@ -1,5 +1,5 @@
 // The inventory table: the camera-watched shelf (live, from GET /state), with search and a status filter.
-// The camera reports a level (full, low, empty), not a quantity, so each row shows a level gauge.
+// Laptop vision estimates how many units are visible; the level gauge is derived from that count.
 
 const STATUS_RANK = { critical: 0, reorder: 1, unseen: 2, ok: 3 };
 
@@ -31,9 +31,10 @@ function drawInventory(state) {
     <tr data-product-key="${esc(item.product_key)}" class="${picked(item)}">
       <td><b>${esc(item.name)}</b><div class="small">Valio product ${esc(item.product_id || "—")}</div></td>
       <td>${pill(shelfStatus(item), STOCK_WORDS[shelfStatus(item)])}</td>
-      <td>${levelGauge(item)} <b>${item.level ? LEVEL_WORDS[item.level] : "—"}</b></td>
+      <td>${levelGauge(item)} <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "—")}</b>
+        ${item.quantity != null ? `<span class="small">pcs</span>` : ""}</td>
       <td class="num">${item.confidence != null ? percent(item.confidence) : "—"}</td>
-      <td>${item.updated_at ? `${clock(item.updated_at)}<div class="small">${esc(item.device_id)}</div>` : `<span class="small">waiting for the camera</span>`}</td>
+      <td>${item.updated_at ? `${clock(item.updated_at)}<div class="small">${esc(item.device_id)}</div>` : `<span class="small">waiting for the first look</span>`}</td>
       <td class="num">${proposedFor(state, item)}</td>
     </tr>`).join("") || `<tr><td colspan="6" class="small">No products match.</td></tr>`);
 }

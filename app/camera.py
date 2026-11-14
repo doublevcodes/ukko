@@ -82,7 +82,10 @@ def connected() -> bool:
 def _read_stream(url: str) -> None:
     """Read pictures from the camera until the stream ends or breaks."""
     buffer = bytearray()
-    with httpx.stream("GET", url, timeout=httpx.Timeout(FRESH_SECONDS)) as response:
+    # A long read timeout: the camera sometimes pauses between frames, and a short
+    # timeout would drop the only upstream connection and freeze every dashboard.
+    timeout = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+    with httpx.stream("GET", url, timeout=timeout) as response:
         response.raise_for_status()
         for chunk in response.iter_bytes():
             buffer.extend(chunk)
@@ -142,13 +145,16 @@ def end_relays_on_exit() -> None:
 
 
 async def relay() -> AsyncIterator[bytes]:
-    """The video as an MJPEG stream of our own: one part per new picture. Ends when the camera goes quiet."""
+    """The video as an MJPEG stream of our own: one part per new picture.
+
+    Stays open across brief camera gaps. Ending the stream made the dashboard freeze on
+    the last frame: the browser kept the <img>, Stockpot still reported connected, and
+    nothing remounted the feed when pictures returned.
+    """
     sent = 0
     while not _stopping:
         frame, count = newest()
-        if frame is None:
-            return
-        if count == sent:
+        if frame is None or count == sent:
             await asyncio.sleep(0.03)
             continue
         sent = count

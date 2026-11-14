@@ -7,6 +7,7 @@ auto_approve_max_total_eur: 500
 max_quantity_multiplier_vs_usual: 3
 allowed_categories:
 - dairy
+- energy drinks
 - plant-based drinks
 substitutes_require_approval: true
 late_delivery_requires_approval: true

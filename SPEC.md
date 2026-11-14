@@ -127,7 +127,8 @@ app/                      # buyer side (port 8000)
   static/                 # dashboard and phone approval page
 config/
   policy.yaml             # spending and approval rules (rewritten when saved in the dashboard)
-  shelf.yaml              # products on the shelf and their reorder settings
+  shelf.yaml              # reorder defaults for camera-recognised foods
+  camera_foods.yaml       # foods the shelf camera may label (encounter list)
   categories.yaml         # plain names for Valio's category codes
 sensor/
   send_event.py           # tiny function the UNO Q app calls
@@ -141,7 +142,7 @@ data/                     # not committed: catalogue, CSVs, logs, keys
 
 These shapes are fixed. Everything else is built against them. Fields marked *(added)* were added for AP2, signed offers, delivery reliability, carbon footprint and substitute tiers.
 
-- **SensorEvent:** `product_key` (matches a key in `shelf.yaml`), `level` (`full` | `low` | `empty`), `confidence` (0 to 1), `timestamp` (ISO 8601), `device_id`.
+- **SensorEvent:** `product_key` (matches a key in `camera_foods.yaml`), `level` (`full` | `low` | `empty`), `confidence` (0 to 1), `timestamp` (ISO 8601), `device_id`.
 - **OrderRequest:** `id`, `source` (`sensor` | `typed`), `raw_text` (optional), `item_description`, `quantity`, `unit` (`l` | `kg` | `pcs`), `needed_by` (date), `constraints` (hard requirements as ids from the catalogue data, e.g. `["FREE_FROM_LACTOSE"]`), `preferences` (soft, e.g. `["EU_ORGANIC_FARMING"]`), `max_unit_price` (optional). *(added)* `search_terms`, `product_id`, `usual_quantity`.
 - **Offer:** `product_id`, `name`, `unit_price` (per sales unit), `currency`, `pack_size`, `available_quantity` (empty means not limited), `earliest_delivery` (date), `attributes`, `labels`, `offer_id`, `expires_at`. *(added)* `offer_jwt` (the supplier's signature), `pack_unit`, `sales_unit`, `comparison_price`, `orderable`, `not_orderable_reason`, `order_cutoff`, `brand`, `category`, `category_name`, `listed_substitutes`, `delivery_reliability`, `co2_kg_per_kg`, `kg_per_sales_unit`.
 - **PlanLine:** `offer`, `quantity` (whole sales units), `line_total`, `is_substitute`, `substitute_reason`. *(added)* `substitute_tier` (`best` | `better` | `good`), `covers`.
@@ -299,10 +300,12 @@ It will be shown on a projector: large type, high contrast, readable from two me
 The Live camera panel shows the shelf camera's video with a clickable box over each watched product.
 
 - **Video:** one background thread reads the camera's MJPEG stream (`CAMERA_FEED_URL`) and keeps the newest frame. `GET /camera/feed` relays it, so the camera serves one client however many dashboards are open.
-- **Finding the products:** every `VISION_INTERVAL_SECONDS` (default 3), and only while a dashboard is polling `/state`, the newest frame and the product names from `shelf.yaml` go to Gemini, which answers with one box around each group of a product. The boxes are kept in memory and sent with `/state` as `detections`: `product_key`, `name`, `box` (`x`, `y`, `w`, `h` as fractions of the frame), `confidence`, `updated_at`.
-- **When something fails:** if Gemini is slow or refuses, the last boxes stay. If the camera stops sending, there are no boxes. Neither can hold up `/state`, the pipeline or an order.
-- **On the dashboard:** hovering a box outlines it. Clicking it selects that product: its tile, camera reading and inventory row are highlighted, and its newest request is shown in the decision panel. Clicking anywhere else in the picture clears the selection. Selecting only changes what is shown; an order still starts only from a sensor event or a typed request.
-- **What this is not:** shelf *levels* still come from the UNO Q (Section 14). This is the one use of the LLM outside the pipeline, and all it does is locate products.
+- **Encounter list:** Gemini may only label keys from `config/camera_foods.yaml` (not the full Valio catalogue). Each food has a display `name`, optional catalogue `product_id`, and `search_terms` for closest-match ordering.
+- **Finding the products:** every `VISION_INTERVAL_SECONDS` (default 3), and only while a dashboard is polling `/state`, the newest frame and that encounter list go to Gemini, which answers with boxes and a visible `count` per box. The boxes are kept in memory and sent with `/state` as `detections`: `product_key`, `name`, `box` (`x`, `y`, `w`, `h` as fractions of the frame), `quantity`, `confidence`, `updated_at`.
+- **Shelf counts:** the same look writes `quantity`, `confidence`, `updated_at`, `device_id` (`vision`) and a coarse `level` (`empty` / `low` / `full` from the visible count) onto every encounter-list shelf row.
+- **Reorders from vision:** a drop from `full` to `low`/`empty` starts a reorder (same armed debounce as the sensor). If the food has a `product_id`, that Valio SKU is ordered; otherwise the pipeline searches the catalogue with `search_terms` and picks the closest match. The first look does not order every unseen food.
+- **When something fails:** if Gemini is slow or refuses, the last boxes and counts stay. If the camera stops sending, there are no boxes. Neither can hold up `/state`, the pipeline or an order.
+- **On the dashboard:** hovering a box outlines it. Clicking it selects that product: its tile, camera reading and inventory row are highlighted, and its newest request is shown in the decision panel. Clicking anywhere else in the picture clears the selection.
 
 ## 14. Sensor side (`sensor/`)
 

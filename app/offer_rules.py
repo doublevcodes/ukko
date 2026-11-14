@@ -10,14 +10,16 @@ from decimal import Decimal
 
 from app.models import Offer, OrderRequest
 
-UNIT_WORDS = {"l": "litre", "kg": "kilo", "pcs": "sales unit"}
+UNIT_WORDS = {"l": "litre", "kg": "kilo", "pcs": "piece"}
 PACK_UNIT_FOR = {"l": "L", "kg": "KG"}
 
 
 def per_sales_unit(offer: Offer, request: OrderRequest) -> Decimal | None:
     """How much of the request's unit one sales unit covers (None if it cannot be compared)."""
     if request.unit == "pcs":
-        return Decimal(1)
+        # Buyer counts cans/bottles/items; the wholesaler sells multi-packs (e.g. 24×330 ml).
+        pieces = offer.pieces_per_sales_unit if offer.pieces_per_sales_unit > 0 else Decimal(1)
+        return pieces
     if offer.pack_unit == PACK_UNIT_FOR[request.unit] and offer.pack_size and offer.pack_size > 0:
         return offer.pack_size
     return None
