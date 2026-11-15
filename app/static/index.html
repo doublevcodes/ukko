@@ -3,35 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stockpot · Prep OS</title>
+  <title>Ukko</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/os.css">
+  <script src="https://js.stripe.com/endive/stripe.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">S</span>
-      <div><div class="brand-name">Stockpot <span>Prep OS</span></div><div class="small" id="venue"></div></div>
+      <span class="logo">U</span>
+      <div class="brand-name">Ukko</div>
     </div>
-    <div class="telemetry-bar" id="telemetry"></div>
-    <span id="chips"></span>
-    <div class="segmented" id="mode"></div>
-    <button class="quiet" id="open-rules">Rules</button>
+    <nav class="nav" id="nav" aria-label="Main">
+      <button type="button" data-page="operations" class="on">Operations</button>
+      <button type="button" data-page="audit">Audit</button>
+    </nav>
+    <button class="quiet" id="open-settings">Settings</button>
   </header>
 
-  <main>
-    <div class="kpis" id="kpis"></div>
-
+  <main id="page-operations" data-page-panel="operations">
     <div class="workspace">
-      <section class="card">
+      <section class="card procurement">
         <div class="card-head">
           <div><div class="eyebrow">Restaurant inventory</div><h2>Replenishment needed</h2></div>
-          <span id="mode-badge"></span>
+          <div class="card-head-meta">
+            <span id="chips"></span>
+          </div>
         </div>
         <div class="tiles" id="replenishment"></div>
         <form id="request-form" class="ask">
-          <input type="text" id="request-text" placeholder="What do you need? e.g. 20 kg of butter by Friday, organic if possible" maxlength="500" autocomplete="off">
-          <button type="submit" class="primary">Ask Stockpot</button>
+          <input type="text" id="request-text" placeholder="What do you need?" maxlength="500" autocomplete="off">
+          <button type="submit" class="primary">Ask Ukko</button>
         </form>
         <span id="request-error" class="error"></span>
         <div id="decision"></div>
@@ -40,7 +42,7 @@
       <div class="stack">
         <section class="card" id="camera-panel">
           <div class="card-head">
-            <div><h2>Live camera</h2></div>
+            <div><h2 class="live-heading">Live camera <span class="live-ping" id="camera-live" aria-hidden="true"></span></h2></div>
             <div class="tabs" id="camera-tabs"></div>
           </div>
           <div class="viewport" id="camera-viewport">
@@ -51,67 +53,184 @@
             <!-- One clickable box per product the vision model found in the picture (drawOverlay). -->
             <div id="camera-overlay"></div>
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-            <span class="viewport-tag" id="camera-tag"></span>
           </div>
-          <div id="camera-telemetry"></div>
         </section>
       </div>
     </div>
 
-    <section class="card" id="inventory">
-      <div class="card-head">
-        <div><h2>Inventory <span class="small">the camera-watched shelf</span></h2></div>
-        <div class="filters">
-          <input type="search" id="inventory-search" placeholder="Search products" autocomplete="off">
-          <select id="inventory-status" aria-label="Status">
-            <option value="">All statuses</option>
-            <option value="critical">Critical</option>
-            <option value="reorder">Reorder</option>
-            <option value="unseen">Not seen yet</option>
-            <option value="ok">OK</option>
-          </select>
+    <div class="lower">
+      <section class="card" id="inventory">
+        <div class="card-head">
+          <div>
+            <h2>Inventory</h2>
+          </div>
+          <div class="filters">
+            <input type="search" id="inventory-search" placeholder="Search products" autocomplete="off">
+            <select id="inventory-status" aria-label="Status">
+              <option value="">All statuses</option>
+              <option value="critical">Critical</option>
+              <option value="reorder">Reorder</option>
+              <option value="ordered">Ordered</option>
+              <option value="rejected">Rejected</option>
+              <option value="unseen">Not seen yet</option>
+              <option value="ok">OK</option>
+            </select>
+          </div>
         </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Product</th><th>Status</th><th>Visible qty</th><th class="num">Camera confidence</th>
-            <th>Last reading</th><th class="num">Proposed</th>
-          </tr></thead>
-          <tbody id="inventory-body"></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Product</th><th>Status</th><th>Stock</th>
+              <th class="num" title="Camera confidence · hover a cell for last reading">Conf.</th>
+              <th title="Usage / day · days of cover · reorder point">Model</th>
+              <th>Proposed</th>
+            </tr></thead>
+            <tbody id="inventory-body"></tbody>
+          </table>
+        </div>
+      </section>
 
-    <div class="columns">
-      <section class="card"><h2>Orders</h2><div id="orders"></div></section>
-      <section class="card"><h2>Activity</h2><div id="activity" class="scroll"></div></section>
-      <section class="card"><h2>Data feeding the model</h2><div id="sources"></div></section>
+      <section class="card" id="orders-panel">
+        <h2>Orders</h2>
+        <div id="orders" class="scroll"></div>
+      </section>
     </div>
   </main>
 
-  <dialog id="rules">
-    <h2>Rules: what needs a person's approval</h2>
-    <form id="rules-form">
+  <main id="page-audit" data-page-panel="audit" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <div class="eyebrow">Audit trail</div>
+          <h2>Activity</h2>
+        </div>
+      </div>
+      <div id="activity" class="scroll audit-log"></div>
+    </section>
+  </main>
+
+  <dialog id="order-detail">
+    <div class="settings-head">
+      <h2>Order details</h2>
+      <button type="button" class="quiet" id="close-order-detail">Close</button>
+    </div>
+    <div id="order-detail-body"></div>
+  </dialog>
+
+  <dialog id="settings">
+    <div class="settings-head">
+      <h2>Settings</h2>
+      <div class="tabs" id="settings-tabs">
+        <button type="button" data-settings-tab="mode" class="on">Autopilot</button>
+        <button type="button" data-settings-tab="payment">Payment</button>
+        <button type="button" data-settings-tab="rules">Rules</button>
+        <button type="button" data-settings-tab="reorder">Reorder model</button>
+        <button type="button" data-settings-tab="trust">Trust test</button>
+      </div>
+    </div>
+
+    <div class="settings-pane" id="settings-mode" data-pane="mode">
+      <p class="small">Safe mode makes every order wait for a person. Autopilot restores the spend limit and auto-orders exact or closest catalogue matches that are full, on time, under that limit, with clear web checks. True substitutes still need a person.</p>
+      <div class="segmented" id="mode"></div>
+      <p class="small" id="mode-hint"></p>
+    </div>
+
+    <div class="settings-pane" id="settings-payment" data-pane="payment" hidden>
+      <p class="small">Save a kitchen card once (Stripe test mode). Every later order — auto-approve or Approve — charges that card. No need to enter details again.</p>
+      <p id="payment-status" class="small"></p>
+      <div class="row">
+        <button type="button" class="primary" id="payment-setup">Add or change card</button>
+        <button type="button" class="quiet" id="payment-cancel" hidden>Cancel</button>
+        <span id="payment-error" class="error"></span>
+      </div>
+      <div id="payment-checkout" class="payment-checkout" hidden></div>
+      <p class="small">Test card: 4242 4242 4242 4242, any future expiry, any CVC.</p>
+    </div>
+
+    <form id="rules-form" class="settings-pane" data-pane="rules" hidden>
+      <h3>What needs a person's approval</h3>
       <label>Orders above this total need approval (EUR, excluding VAT)
         <input type="number" name="auto_approve_max_total_eur" min="0" step="1" required></label>
       <label>A quantity more than this many times the usual amount needs approval
         <input type="number" name="max_quantity_multiplier_vs_usual" min="0.1" step="0.1" required></label>
       <label>The most the agent may spend in total on its own (EUR)
         <input type="number" name="agent_budget_eur" min="0" step="1" required></label>
-      <label>Product groups the agent may buy on its own</label>
-      <div id="rule-categories"></div>
-      <label class="check"><input type="checkbox" name="substitutes_require_approval"> Substitutes need approval</label>
-      <label class="check"><input type="checkbox" name="late_delivery_requires_approval"> Late delivery needs approval</label>
-      <label class="check"><input type="checkbox" name="web_caution_requires_approval"> A web-check caution needs approval</label>
-      <label class="check"><input type="checkbox" name="web_check_failed_requires_approval"> A failed web check needs approval</label>
+
+      <div class="rule-field">
+        <span class="rule-label">Product groups the agent may buy on its own</span>
+        <div class="category-picker">
+          <div id="rule-category-pills" class="category-pills"></div>
+          <select id="rule-category-add" aria-label="Add a product group">
+            <option value="">Add a product group…</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rule-toggles" id="rule-toggles">
+        <label class="rule-toggle">
+          <span class="rule-toggle-copy">
+            <span class="rule-toggle-title">Substitutes</span>
+            <span class="rule-toggle-state" data-on="Need approval" data-off="Allow on their own"></span>
+          </span>
+          <input type="checkbox" name="substitutes_require_approval" role="switch">
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <label class="rule-toggle">
+          <span class="rule-toggle-copy">
+            <span class="rule-toggle-title">Late delivery</span>
+            <span class="rule-toggle-state" data-on="Need approval" data-off="Allow on their own"></span>
+          </span>
+          <input type="checkbox" name="late_delivery_requires_approval" role="switch">
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <label class="rule-toggle">
+          <span class="rule-toggle-copy">
+            <span class="rule-toggle-title">Web-check caution</span>
+            <span class="rule-toggle-state" data-on="Need approval" data-off="Allow on their own"></span>
+          </span>
+          <input type="checkbox" name="web_caution_requires_approval" role="switch">
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <label class="rule-toggle">
+          <span class="rule-toggle-copy">
+            <span class="rule-toggle-title">Failed web check</span>
+            <span class="rule-toggle-state" data-on="Need approval" data-off="Allow on their own"></span>
+          </span>
+          <input type="checkbox" name="web_check_failed_requires_approval" role="switch">
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+      </div>
+
       <p class="small">Saving makes the manager key sign new standing limits for the agent (AP2). The supplier enforces them too.</p>
       <div class="row">
         <button type="submit" class="primary">Save rules</button>
-        <button type="button" class="quiet" id="close-rules">Cancel</button>
         <span id="rules-error" class="error"></span>
       </div>
     </form>
+
+    <div class="settings-pane" id="settings-reorder" data-pane="reorder" hidden>
+      <h3>Reorder model</h3>
+      <p class="small">Read-only parameters that decide when and how much to reorder. Edit <code>config/shelf.yaml</code> to change them.</p>
+      <div id="reorder-model-panel" class="reorder-model-panel"></div>
+    </div>
+
+    <div class="settings-pane" id="settings-trust" data-pane="trust" hidden>
+      <h3>Trust test</h3>
+      <p class="small">Each button takes a real signed offer, breaks it in one way, and runs the same verification function the pipeline uses. No order is placed. Results are written to the audit trail as a test.</p>
+      <div class="trust-test-actions">
+        <button type="button" class="quiet" data-trust-scenario="price_changed">Price changed</button>
+        <button type="button" class="quiet" data-trust-scenario="expired">Expired</button>
+        <button type="button" class="quiet" data-trust-scenario="unknown_signer">Unknown signer</button>
+        <button type="button" class="quiet" data-trust-scenario="reused">Reused</button>
+        <button type="button" class="quiet" data-trust-scenario="wrong_buyer">Wrong buyer</button>
+      </div>
+      <pre id="trust-test-result" class="small trust-token"></pre>
+      <span id="trust-test-error" class="error"></span>
+    </div>
+
+    <div class="row">
+      <button type="button" class="quiet" id="close-settings">Close</button>
+    </div>
   </dialog>
 
   <script src="/static/decision.js"></script>

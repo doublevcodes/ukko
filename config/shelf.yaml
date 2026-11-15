@@ -2,23 +2,51 @@
 # The camera encounter list drives which products appear on the shelf; this file
 # only supplies quantity / unit / lead time when a food does not override them.
 #
-# reorder_quantity  how much to order when the shelf runs low, until usage has been measured
+# reorder_quantity  how many units to order when a reorder is triggered (editable in the dashboard)
+# reorder_below     order when the camera sees this many units or fewer (editable in the dashboard)
 # unit              l (litres), kg (kilos) or pcs (sales units as Valio sells them)
 # usual_quantity    the normal order size, used by the "unusually large" rule
 # lead_time_days    the order is needed this many days after the shelf runs low
 # full_quantity     optional: how much a full shelf holds (default: reorder_quantity)
-# low_quantity      optional: how much is left at "low" (default: a quarter of full)
-# typical_daily_use optional: expected use per day, used until real usage has been measured
-# cover_days        days an order should last after it arrives (default 7)
+# low_quantity      optional: how much is left at "low" for non-count sensors (default: a quarter of full)
+# typical_daily_use optional: expected use per day, used to forecast run-out
+# cover_days        days of cover used when forecasting run-out (default 7)
+# service_class     critical / standard / perishable — sets the safety-buffer z score
+# units_per_visible_item  each camera-seen item counts as this many order units (1 = one-to-one)
+# pack_size         orders are rounded to whole packs of this size
+# max_stock_units   never order so that stock + on-order would exceed this
+# shelf_life_days   optional; never order more than will be used before it expires
 #
-# The amount ordered is the average daily use x (lead_time_days + cover_days), plus
-# bookings from demand.yaml, minus what is on the shelf (the camera's count when it
-# counts pieces). Before any usage is measured, typical_daily_use stands in for it.
-# An order is also started whenever that forecast shows a product running out
+# Bookings from demand.yaml are added on top of reorder_quantity.
+# An order is also started whenever the forecast shows a product running out
 # within 7 days (app/forecast.py).
+#
+# reorder_model (below) holds the global usage / reorder-point parameters.
+# Reasoning for each value is documented in REORDER_SPEC.md and (later) the README.
+
+reorder_model:
+  # Real wall-clock days (86400 seconds). Use a smaller value only for a sped-up demo.
+  model_day_seconds: 86400
+  # How fast the usage estimate adapts (alpha 0.3 ≈ last 3–5 model days).
+  alpha: 0.3
+  # Day-to-day variability vs Poisson sqrt(d); 1.5 allows busy/quiet days (assumption).
+  sigma_factor: 1.5
+  # Service-level z scores: chance of not stocking out before delivery.
+  z:
+    critical: 2.326   # 99%
+    standard: 1.645   # 95%
+    perishable: 1.282 # 90%
+  default_cover_days: 7
+  default_lead_days: 2
+  # Caps on web demand-signal adjustments.
+  multiplier_min: 0.7
+  multiplier_max: 1.5
+  extra_lead_days_min: 0
+  extra_lead_days_max: 3
 
 defaults:
   reorder_quantity: 24
+  reorder_below: 2
   unit: pcs
   usual_quantity: 24
   lead_time_days: 2
@@ -27,3 +55,7 @@ defaults:
   search_terms: ""
   cover_days: 7
   typical_daily_use: 4
+  service_class: standard
+  units_per_visible_item: 1
+  pack_size: 24
+  max_stock_units: 144

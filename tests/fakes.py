@@ -37,9 +37,13 @@ def catalogue_file_content() -> str:
         measure = {"volume": {"value": size, "unit": "LTR"}} if unit == "L" else {}
         entries.append({
             "id": product_id, "vendorName": f"{brand} Oy", "category": category, "salesUnit": "ST",
-            "units": [{"unitId": "ST", "sizeInBaseUnits": 1.0}], "countryOfOrigin": "fi", "substitutions": [],
+            "units": [{"unitId": "ST", "sizeInBaseUnits": 1.0}], "countryOfOrigin": "fi",
+            "salesUnitGtin": f"640000000{product_id}", "substitutions": [],
             "synkkaData": {
                 "names": [{"language": "en", "value": name}], "brand": brand,
+                "gtin": f"640000000{product_id}",
+                "producers": [{"id": "6407809999995", "name": f"{brand} Oy"}],
+                "countriesOfOrigin": ["246"],
                 "classifications": [
                     {"name": "nutritionalClaim", "values": [{"id": claim} for claim in claims]},
                     {"name": "packagingMarkedLabel", "values": [{"id": label} for label in labels]},
@@ -143,3 +147,48 @@ class FakeExa:
         if self.down:
             raise ConnectionError("Exa is switched off in this test.")
         return self.results
+
+
+class FakeStripe:
+    """Stripe setup + off-session charge, with knobs the tests can turn."""
+
+    def __init__(self) -> None:
+        self.down = False
+        self.decline = False
+        self.charges: list[dict[str, Any]] = []
+        self._customers = 0
+        self._sessions: dict[str, str] = {}  # session_id -> customer_id
+
+    def configured(self) -> bool:
+        return not self.down
+
+    def create_customer(self, name: str) -> str:
+        self._customers += 1
+        return f"cus_test_{self._customers}"
+
+    def create_embedded_setup(self, customer_id: str, return_url: str) -> dict[str, str]:
+        session_id = f"cs_test_{len(self._sessions) + 1}"
+        self._sessions[session_id] = customer_id
+        return {"client_secret": f"cs_test_secret_{session_id}", "session_id": session_id}
+
+    def setup_payment_method(self, session_id: str) -> tuple[str, str, dict[str, Any]]:
+        from app.payments import PaymentError
+        customer_id = self._sessions.get(session_id)
+        if not customer_id:
+            raise PaymentError("Stripe could not find that Checkout session.")
+        return customer_id, "pm_test_visa", {"brand": "Visa", "last4": "4242"}
+    def set_default_payment_method(self, customer_id: str, payment_method_id: str) -> None:
+        return None
+
+    def charge(self, customer_id: str, payment_method_id: str, amount_cents: int,
+               currency: str, request_id: str, description: str) -> str:
+        from app.payments import PaymentError
+        if self.decline:
+            raise PaymentError("The kitchen card was declined (card_declined). "
+                               "Open Change card in Settings if you need to use another card.")
+        payment_id = f"pi_test_{len(self.charges) + 1}"
+        self.charges.append({
+            "id": payment_id, "customer_id": customer_id, "payment_method_id": payment_method_id,
+            "amount_cents": amount_cents, "currency": currency, "request_id": request_id,
+        })
+        return payment_id

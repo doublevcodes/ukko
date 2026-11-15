@@ -56,7 +56,8 @@ def test_typed_request_prefers_organic_and_flags_the_category(world):
 def test_hard_requirement_is_never_broken(world):
     record = typed(world, "50 l lactose-free semi skimmed milk", item_description="semi skimmed milk", search_terms="semi skimmed milk",
                    quantity=50, unit="l", needed_by=in_days(3), constraints=["FREE_FROM_LACTOSE"])
-    assert record.decision.chosen_plan.lines[0].offer.product_id == "1002"  # the cheapest lactose-free one
+    # Exact match is by kind / plainness, not lowest price (1001 and 1002 are both lactose-free semi-skimmed).
+    assert record.decision.chosen_plan.lines[0].offer.product_id in {"1001", "1002"}
     assert all("FREE_FROM_LACTOSE" in line.offer.attributes for line in record.decision.chosen_plan.lines)
 
 

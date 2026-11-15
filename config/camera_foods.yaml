@@ -1,7 +1,9 @@
 # Foods the shelf camera may see. Vision may only label keys from this list.
-# product_id   optional Valio catalogue id; omit when there is no exact SKU
-# search_terms keywords used to find the closest catalogue match when ordering
-# typical_daily_use  expected units used per day in a normal restaurant, until real usage is measured
+# product_id        optional Valio catalogue id; omit when there is no exact SKU
+# search_terms      keywords used to find the closest catalogue match when ordering
+# reorder_below     order when the camera sees this many units or fewer (dashboard-editable)
+# reorder_quantity  how many units to order when a reorder is triggered (dashboard-editable)
+# typical_daily_use expected units used per day, used to forecast run-out
 
 foods:
   hell_energy:
@@ -9,6 +11,18 @@ foods:
     # HELL is not in the Valio catalogue; orders search for the closest energy drink.
     search_terms: "energy drink"
     typical_daily_use: 6    # cans/day
+
+  funky_monkey_green_apple:
+    name: "Funky Monkey Green Apple energy drink"
+    product_id: "477459"
+    search_terms: "funky monkey green apple energy drink"
+    typical_daily_use: 6    # bottles/day
+
+  funky_monkey_sunny_peach:
+    name: "Funky Monkey Sunny Peach energy drink"
+    # Sunny Peach is not in the Valio catalogue; orders search for the closest Funky Monkey.
+    search_terms: "funky monkey energy drink"
+    typical_daily_use: 6    # bottles/day
 
   nocco:
     name: "NOCCO energy drink"
@@ -50,3 +64,9 @@ foods:
     # No Nescafé latte can in the catalogue; orders search for a close coffee milk drink.
     search_terms: "latte coffee drink"
     typical_daily_use: 5    # cans/day
+
+  ballerina_vadelma_lakritsi:
+    name: "Ballerina vadelma + lakritsi biscuits"
+    # Exact liquorice+raspberry Ballerina not in the catalogue; closest is raspberry Ballerina.
+    search_terms: "ballerina raspberry biscuit"
+    typical_daily_use: 4    # packs/day

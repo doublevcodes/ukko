@@ -42,9 +42,11 @@ ENFORCE_ORDER_CUTOFF = _flag("ENFORCE_ORDER_CUTOFF", True)
 MERCHANT_ID = "valio-aimo-gateway"
 MERCHANT_NAME = "Valio Aimo (Junction 2026 mock)"
 CURRENCY = "EUR"
+# Default JWT audience when the buyer does not name itself on /offers.
+DEFAULT_OFFER_AUDIENCE = os.getenv("DEFAULT_OFFER_AUDIENCE", "stockpot-demo-kitchen")
 
-# How long a signed offer or a signed checkout stays valid.
-OFFER_TTL_SECONDS = 600
+# How long a signed offer or a signed checkout stays valid (wall clock, not the reorder demo clock).
+OFFER_TTL_SECONDS = int(os.getenv("OFFER_TTL_SECONDS") or 600)
 CHECKOUT_TTL_SECONDS = 600
 
 # Valio asks agents to price only products they have narrowed down.

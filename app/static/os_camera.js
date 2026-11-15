@@ -1,5 +1,4 @@
-// The Live camera panel: the shelf video, the clickable product boxes drawn over it, and the
-// sensor readings underneath.
+// The Live camera panel: the shelf video and the clickable product boxes drawn over it.
 // The video is Stockpot's relay of the camera (GET /camera/feed). The boxes come from GET /state
 // (`detections`): the vision loop on the laptop asks Gemini where each watched product stands.
 
@@ -12,15 +11,9 @@ function drawCamera(state) {
   const chosen = BASELINE.cameras[camera];
   put("camera-tabs", BASELINE.cameras.map((entry, index) =>
     `<button class="tab ${index === camera ? "on" : ""}" data-camera="${index}">${esc(entry.label)}</button>`).join(""));
-  const reporting = chosen.watchesShelf
-    ? state.shelf.filter((item) => item.updated_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at)) : [];
-  put("camera-tag", reporting.length ? pill("live", `${reporting[0].device_id} reporting`) : pill("", "No signal"));
-  put("camera-telemetry", !chosen.watchesShelf ? `<p class="small">No camera is connected here yet.</p>` : state.shelf.map((item) => `
-    <div class="reading ${picked(item)}" data-product-key="${esc(item.product_key)}"><span class="dot ${shelfStatus(item)}"></span><span class="grow" title="${esc(item.name)}">${esc(item.name)}</span>
-      <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "Not seen yet")}</b>
-      <span class="small">${item.updated_at ? `pcs · ${percent(item.confidence)} conf. · ${clock(item.updated_at)}` : "waiting for the first look"}</span>
-    </div>`).join(""));
-  mountFeed(chosen.feedUrl && (state.health || {}).camera_connected ? chosen.feedUrl : null);
+  const connected = Boolean(chosen.feedUrl && (state.health || {}).camera_connected);
+  $("camera-live").classList.toggle("on", connected);
+  mountFeed(connected ? chosen.feedUrl : null);
   drawOverlay(chosen.watchesShelf ? state.detections || [] : []);
 }
 
@@ -70,7 +63,7 @@ function drawOverlay(detections) {
   while (overlay.children.length < boxes.length) {
     const hit = document.createElement("button");
     hit.type = "button"; hit.className = "hit";
-    hit.innerHTML = `<span class="hit-label"><b></b><i></i></span>`;
+    hit.innerHTML = `<span class="hit-label"><b></b></span>`;
     overlay.append(hit);
   }
   boxes.forEach((found, index) => {
@@ -80,11 +73,10 @@ function drawOverlay(detections) {
     // A smaller box sits above a larger one, so a product standing in front of another stays clickable.
     hit.style.zIndex = String(1000 - Math.round(found.place.width * found.place.height / 10));
     hit.dataset.productKey = found.product_key;
-    hit.title = `${found.name} · ${qtyNum(found.quantity)} pcs · ${percent(found.confidence)}`;
+    hit.title = `${found.name} · ${qtyNum(found.quantity)} pcs`;
     hit.setAttribute("aria-label", `Select ${found.name}, about ${qtyNum(found.quantity)} pieces`);
     hit.setAttribute("aria-pressed", String(on));
     hit.classList.toggle("selected", on);
     label.querySelector("b").textContent = qtyNum(found.quantity);
-    label.querySelector("i").textContent = percent(found.confidence);
   });
 }

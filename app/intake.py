@@ -32,7 +32,7 @@ def new_typed_request(text: str, reply_to: str | None = None) -> RequestRecord:
     """Create the record for a typed request. An answer to a question is joined to the original text."""
     earlier = state.requests.get(reply_to) if reply_to else None
     if earlier and earlier.decision.status == "needs_clarification" and earlier.source == "typed":
-        text = f"{earlier.title}\n(Stockpot asked: {earlier.decision.message})\nAnswer: {text}"
+        text = f"{earlier.title}\n(Ukko asked: {earlier.decision.message})\nAnswer: {text}"
         with state.lock:
             # The question is answered, so the half-finished request leaves the dashboard.
             # Its entries stay in the audit log.
@@ -70,10 +70,11 @@ def sensor_event(event: SensorEvent) -> tuple[str, RequestRecord | None]:
                 level.full_since = level.updated_at
             return "level recorded", None
         cycle_started, level.full_since = level.full_since, None
-        open_request = state.open_request_for(event.product_key)
-        if open_request or not level.armed:
-            why = "a request for it is already open" if open_request else "it was already handled and the shelf has not been refilled"
-            state.log(open_request.id if open_request else None, "sensor",
+        blocked = state.blocks_camera_reorder(event.product_key)
+        if blocked or not level.armed:
+            why = ("a request for it is already open or on order" if blocked
+                   else "it was already handled and the shelf has not been refilled")
+            state.log(blocked.id if blocked else None, "sensor",
                       f"Ignored duplicate: {level.name} reported '{event.level}' again, but {why}.")
             return "ignored duplicate", None
         level.armed = False
@@ -105,10 +106,11 @@ def _reorder_from_shelf_row(record: RequestRecord) -> bool:
 
 
 def check_forecasts() -> list[RequestRecord]:
-    """Raise a reorder for every product the forecast shows running out within the next 7 days.
+    """Raise a reorder when inventory position is at or below the reorder point.
 
-    Same rule as the sensor: only products seen full since their last reorder, and never
-    while a request for the product is open.
+    Same guards as the camera path: armed, seen at least once, and not already blocked
+    by an open or on-order request. on_order_units is part of IP, so a delivery in
+    flight stops a duplicate.
     """
     raised = []
     with state.lock:
@@ -116,21 +118,37 @@ def check_forecasts() -> list[RequestRecord]:
     for key in keys:
         with state.lock:
             level = state.shelf.get(key)
-            # Only products seen full since their last reorder: a food the camera has never seen
-            # stocked (not in frame) must not order, and a delivery on its way is not ordered twice.
-            if level is None or level.full_since is None or not level.armed or state.open_request_for(key):
+            # Never stocked (no full_since) must not order; open/on-order requests still block.
+            if (level is None or level.full_since is None or not level.armed
+                    or state.blocks_camera_reorder(key)):
                 continue
-            stock = forecast.stock_now(level, level.level, level.updated_at, forecast.rate_for(key, level),
-                                       state.now(), level.quantity)
-            if stock is None:
-                continue
-            empty_on = forecast.runs_out(key, level, stock, state.now().date())
-            if empty_on is None:
-                continue
-            level.armed = False
-            record = state.new_request("sensor", f"Forecast: {level.name} runs out by {empty_on:%a %d %b}", key)
-        state.log(record.id, "forecast", f"About {stock:.0f} {level.unit} of {level.name} is left; at the expected use and "
-                  f"bookings it runs out by {empty_on:%a %d %b}, within {forecast.RUNOUT_WINDOW_DAYS} days. Starting a reorder.")
+            if forecast.uses_reorder_model(level) and level.quantity is not None:
+                forecast.seed_usage(level)
+                view = forecast.evaluate_row(key, level, now=state.now(), visible=level.quantity)
+                if not view["needs_reorder"]:
+                    continue
+                level.armed = False
+                level.reorder_why = view["why"]
+                record = state.new_request(
+                    "sensor",
+                    f"Reorder model: {level.name} IP {view['inventory_position']:.0f} ≤ R {view['reorder_point']:.0f}",
+                    key,
+                )
+                why = view["why"]
+            else:
+                stock = forecast.stock_now(level, level.level, level.updated_at, forecast.rate_for(key, level),
+                                           state.now(), level.quantity)
+                if stock is None:
+                    continue
+                empty_on = forecast.runs_out(key, level, stock, state.now().date())
+                if empty_on is None:
+                    continue
+                level.armed = False
+                record = state.new_request("sensor", f"Forecast: {level.name} runs out by {empty_on:%a %d %b}", key)
+                why = (f"About {stock:.0f} {level.unit} of {level.name} is left; at the expected use and "
+                       f"bookings it runs out by {empty_on:%a %d %b}, within {forecast.RUNOUT_WINDOW_DAYS} days. "
+                       f"Starting a reorder.")
+        state.log(record.id, "forecast", why)
         raised.append(record)
     return raised
 

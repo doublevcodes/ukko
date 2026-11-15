@@ -38,11 +38,16 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-4-hydrogen"
 GEMINI_THINKING_LEVEL = os.getenv("GEMINI_THINKING_LEVEL", "low")
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 
+# Stripe test mode: one saved kitchen card, charged on every order (app/payments.py).
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "").strip()
+STRIPE_CUSTOMER_FILE = DATA_DIR / "stripe_customer.json"
+
 # The shelf camera's MJPEG stream. Stockpot relays it to the dashboard (GET /camera/feed) and
 # looks at its frames to find the products in the picture. Blank switches both off.
 CAMERA_FEED_URL = os.getenv("CAMERA_FEED_URL", "http://10.0.41.90:5000/").strip()
 # Seconds between two looks at the picture. Each look is one Gemini call, made only while a dashboard is open.
-VISION_INTERVAL_SECONDS = float(os.getenv("VISION_INTERVAL_SECONDS") or 3)
+VISION_INTERVAL_SECONDS = float(os.getenv("VISION_INTERVAL_SECONDS") or 1.5)
 
 # Minutes between two forecast checks that order ahead before an item runs out (app/intake.py).
 FORECAST_CHECK_MINUTES = float(os.getenv("FORECAST_CHECK_MINUTES") or 15)

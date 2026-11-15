@@ -60,7 +60,7 @@ def _order_reasons(request: OrderRequest, plan: Plan, config: PolicyConfig) -> l
     for line in plan.lines:
         group = line.offer.category_name
         if group not in config.allowed_categories:
-            described = f"in the '{group}' group" if group else "in a product group Stockpot does not recognise"
+            described = f"in the '{group}' group" if group else "in a product group Ukko does not recognise"
             reasons.append(f"Category rule: {line.offer.name} is {described}, which is not on the list "
                            f"the agent may buy on its own ({', '.join(config.allowed_categories) or 'empty'}).")
     return reasons
@@ -80,12 +80,31 @@ def _web_reasons(findings: list[WebFinding], config: PolicyConfig) -> list[str]:
     return reasons
 
 
+def _trust_reasons(plan: Plan) -> tuple[list[str], list[str]]:
+    """Trust-protocol policy additions: bad signature/issuer/audience block; origin needs a person."""
+    denied: list[str] = []
+    needs_person: list[str] = []
+    for line in plan.lines:
+        for check in line.offer.trust_checks or []:
+            if check.get("passed"):
+                continue
+            name = check.get("name")
+            reason = check.get("reason") or "Trust check failed."
+            if name in {"signature", "supplier", "audience"}:
+                denied.append(f"Trust rule: {reason}")
+            elif name == "origin":
+                needs_person.append(f"Trust rule: {reason}")
+    return denied, needs_person
+
+
 def evaluate(request: OrderRequest, plan: Plan, findings: list[WebFinding], config: PolicyConfig) -> PolicyResult:
     """Decide: order automatically, ask a person, or refuse."""
     denied = _deny_reasons(request, plan, findings)
+    trust_denied, trust_person = _trust_reasons(plan)
+    denied += trust_denied
     if denied:
         return PolicyResult(outcome="deny", reasons=denied)
-    needs_person = _order_reasons(request, plan, config) + _web_reasons(findings, config)
+    needs_person = _order_reasons(request, plan, config) + _web_reasons(findings, config) + trust_person
     if needs_person:
         return PolicyResult(outcome="needs_approval", reasons=needs_person)
     # Worded carefully: a rule may be switched off, so do not claim "no substitutes" or "no concerns".

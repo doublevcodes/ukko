@@ -24,7 +24,10 @@
 <body>
 <header>
   <h1>Valio Aimo agent gateway: supplier's view</h1>
-  <p>What outside agents looked up and ordered, as the supplier sees it. Interface description: <a href="/docs">/docs</a></p>
+  <p>What outside agents looked up and ordered, as the supplier sees it.
+    HTTP API: <a href="/docs">/docs</a> ·
+    MCP for outside agents: <a href="/.well-known/mcp.json">/.well-known/mcp.json</a>
+    (default endpoint <code>http://127.0.0.1:8002/mcp</code> — run <code>python -m gateway.mcp_server</code>)</p>
 </header>
 <main>
   <section><h2>Orders</h2><div id="orders">Loading…</div></section>

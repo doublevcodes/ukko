@@ -2,7 +2,9 @@
 
 Valio's mock API has no ordering endpoint, so ordering is simulated here.
 The authorisation is real: checkouts and receipts are signed, and an order is
-recorded only when the buyer presents valid AP2 mandates. No money moves.
+recorded only when the buyer presents valid AP2 mandates. Money movement is
+done by the buyer (Stripe test mode) before complete; the PaymentIntent id is
+copied into the signed payment receipt.
 """
 
 from __future__ import annotations
@@ -19,8 +21,12 @@ from ap2.sdk.generated.types.checkout import Checkout
 from ap2.sdk.receipt_wrapper import ReceiptClient
 from ap2.sdk.utils import compute_sha256_b64url
 
-from gateway import keys, ledger, mandate_checks, offers, settings
+from gateway import keys, ledger, mandate_checks, offer_store, offers, settings
 from gateway.ledger import HELSINKI
+
+
+def _eur(value: str | Decimal) -> str:
+    return f"{Decimal(str(value)):.2f}"
 
 _checkouts: dict[str, dict[str, Any]] = {}
 _receipts = ReceiptClient()
@@ -81,7 +87,39 @@ def _checkout_payload(checkout_id: str, live: list[dict], quantities: dict[str, 
     }
 
 
-def create_checkout(buyer_id: str, request_id: str, needed_by: date, lines: list[dict[str, Any]]) -> dict[str, Any]:
+def _quoted_offer_problems(lines: list[dict[str, Any]], live_by_id: dict[str, dict[str, Any]]) -> list[str]:
+    """Refuse lines that quote a bad, expired, reused or mismatched signed offer."""
+    problems: list[str] = []
+    for line in lines:
+        offer_id, offer_hash = line.get("offer_id"), line.get("offer_hash")
+        if not offer_id and not offer_hash:
+            continue  # older clients: live re-price alone still works
+        if not offer_id or not offer_hash:
+            problems.append(f"Product {line['product_id']}: offer_id and offer_hash must be quoted together.")
+            continue
+        live = live_by_id.get(line["product_id"]) or {}
+        delivery = live.get("earliest_delivery")
+        quoted = offer_store.get(offer_id)
+        price_claim = ((quoted or {}).get("claims") or {}).get("price") or {}
+        signed_price = str(price_claim.get("unit_price") or "")
+        # Validate the buyer's quote against the signed offer (not against the live re-price).
+        problems += offer_store.problems_for_line(
+            offer_id, offer_hash, line["product_id"], signed_price, settings.CURRENCY,
+            line["quantity"], delivery,
+        )
+        live_price = str(live.get("unit_price") or "")
+        if quoted and live_price and signed_price and _eur(signed_price) != _eur(live_price):
+            name = (quoted["claims"].get("product") or {}).get("name") or line["product_id"]
+            problems.append(
+                f"The price of {name} rose from {_eur(signed_price)} to {_eur(live_price)} EUR."
+            )
+    return problems
+
+
+def create_checkout(
+    buyer_id: str, request_id: str, needed_by: date, lines: list[dict[str, Any]],
+    mandate_id: str | None = None,
+) -> dict[str, Any]:
     """Re-price a cart live and return a supplier-signed checkout.
 
     If this request was already ordered, the existing order is returned
@@ -96,17 +134,26 @@ def create_checkout(buyer_id: str, request_id: str, needed_by: date, lines: list
     if len(quantities) != len(lines):
         raise CheckoutError(422, "duplicate_lines", "Each product may appear on one line only.")
 
-    live = offers.get_offers(list(quantities), needed_by)["offers"]
+    live = offers.get_offers(list(quantities), needed_by, audience=buyer_id)["offers"]
     problems = _stock_problems(live, quantities)
     if problems:
         raise CheckoutError(409, "cannot_fulfil", "Some lines cannot be supplied as requested.", problems)
+    live_by_id = {offer["product_id"]: offer for offer in live}
+    offer_problems = _quoted_offer_problems(lines, live_by_id)
+    if offer_problems:
+        raise CheckoutError(409, "offer_invalid", " ".join(offer_problems), offer_problems)
 
     checkout_id = f"chk_{secrets.token_hex(8)}"
     now = datetime.now(HELSINKI).replace(microsecond=0)
     expires = now + timedelta(seconds=settings.CHECKOUT_TTL_SECONDS)
+    quoted = [
+        {"product_id": line["product_id"], "offer_id": line.get("offer_id"), "offer_hash": line.get("offer_hash")}
+        for line in lines if line.get("offer_id")
+    ]
     extra = {"buyer_id": buyer_id, "request_id": request_id, "needed_by": needed_by.isoformat(),
              "expires_at": expires.isoformat(), "iss": settings.MERCHANT_ID,
-             "iat": int(now.timestamp()), "exp": int(expires.timestamp())}
+             "iat": int(now.timestamp()), "exp": int(expires.timestamp()),
+             "quoted_offers": quoted, "mandate_id": mandate_id}
     payload = _checkout_payload(checkout_id, live, quantities, extra)
     Checkout.model_validate(payload)  # fail loudly here rather than at the buyer
     checkout_jwt = keys.sign(payload)
@@ -114,6 +161,7 @@ def create_checkout(buyer_id: str, request_id: str, needed_by: date, lines: list
         "id": checkout_id, "jwt": checkout_jwt, "hash": compute_sha256_b64url(checkout_jwt),
         "payload": payload, "buyer_id": buyer_id, "request_id": request_id,
         "total_cents": payload["totals"][1]["amount"], "expires": expires.timestamp(),
+        "quoted_offers": quoted, "mandate_id": mandate_id,
     }
     return {"checkout_id": checkout_id, "checkout_jwt": checkout_jwt, "checkout": payload,
             "audience": settings.MERCHANT_ID, "nonce": checkout_id, "expires_at": expires.isoformat()}
@@ -136,7 +184,10 @@ def _order_lines(payload: dict[str, Any]) -> list[dict[str, Any]]:
     } for line in payload["line_items"]]
 
 
-def complete_checkout(checkout_id: str, checkout_mandate: str, payment_mandate: str) -> dict[str, Any]:
+def complete_checkout(
+    checkout_id: str, checkout_mandate: str, payment_mandate: str,
+    stripe_payment_intent_id: str | None = None, payment_method_label: str | None = None,
+) -> dict[str, Any]:
     """Verify the buyer's AP2 mandates and, if they hold, record the order."""
     checkout = _checkouts.get(checkout_id)
     if checkout is None:
@@ -155,32 +206,85 @@ def complete_checkout(checkout_id: str, checkout_mandate: str, payment_mandate: 
         raise CheckoutError(403, "mandate_rejected", "The mandates do not authorise this order.", detail)
 
     payload, chained = checkout["payload"], flow == "human_not_present"
+    # Re-check quoted offers immediately before recording the order.
+    for quoted in checkout.get("quoted_offers") or []:
+        if not quoted.get("offer_id"):
+            continue
+        record = offer_store.get(quoted["offer_id"])
+        if record is None or record.get("used_by_order"):
+            raise CheckoutError(
+                409, "offer_invalid",
+                f"Offer {quoted['offer_id']} is unknown, expired or already used.",
+            )
+        if record["hash"] != quoted.get("offer_hash"):
+            raise CheckoutError(409, "offer_invalid", f"Offer {quoted['offer_id']} hash mismatch.")
+        if record["claims"].get("exp", 0) <= time.time():
+            raise CheckoutError(410, "offer_expired", f"Offer {quoted['offer_id']} has expired.")
+
+    payment_id = stripe_payment_intent_id or f"mockpay_{secrets.token_hex(6)}"
+    payment_method = payment_method_label or (
+        f"Stripe test ({payment_id})" if stripe_payment_intent_id
+        else "Invoice on account (demo, no money moves)"
+    )
+    offer_ids = [q["offer_id"] for q in (checkout.get("quoted_offers") or []) if q.get("offer_id")]
+    offer_hashes = [q["offer_hash"] for q in (checkout.get("quoted_offers") or []) if q.get("offer_hash")]
+    mandate_id = checkout.get("mandate_id") or reference
     order = {
         "status": "confirmed", "buyer_id": checkout["buyer_id"], "request_id": checkout["request_id"],
         "checkout_id": checkout_id, "placed_at": datetime.now(HELSINKI).isoformat(timespec="seconds"),
         "currency": settings.CURRENCY, "total": f"{checkout['total_cents'] / 100:.2f}",
         "total_cents": checkout["total_cents"], "lines": _order_lines(payload), "flow": flow,
-        "mandate_reference": reference, "payment_method": "Invoice on account (demo, no money moves)",
+        "mandate_reference": reference, "payment_method": payment_method,
+        "stripe_payment_intent_id": stripe_payment_intent_id,
         "standing_mandate": mandate_checks.mandate_digest(payment_mandate) if chained else None,
+        "offer_ids": offer_ids, "offer_hashes": offer_hashes, "mandate_id": mandate_id,
     }
-    return ledger.record_order(order, lambda order_id: _success_receipts(order_id, reference, payment_mandate))
+
+    def write_receipts(order_id: str) -> dict[str, str]:
+        for offer_id in offer_ids:
+            offer_store.mark_used(offer_id, order_id)
+        return _success_receipts(
+            order_id, reference, payment_mandate, payment_id,
+            offer_ids=offer_ids, offer_hashes=offer_hashes, mandate_id=mandate_id,
+            total=order["total"],
+        )
+
+    return ledger.record_order(order, write_receipts)
 
 
-def _success_receipts(order_id: str, reference: str, payment_mandate: str) -> dict[str, str]:
-    """Signed AP2 receipts for the order: one for the checkout, one for the payment."""
+def _success_receipts(
+    order_id: str, reference: str, payment_mandate: str, payment_id: str,
+    *, offer_ids: list[str], offer_hashes: list[str], mandate_id: str, total: str,
+) -> dict[str, str]:
+    """Signed AP2 receipts for the order: one for the checkout, one for the payment.
+
+    The checkout receipt JWT also carries the trust-chain links (offer id/hash,
+    mandate id, total) so a buyer can confirm the same chain it sent.
+    """
     checkout_receipt = _receipts.create_checkout_receipt(settings.MERCHANT_ID, reference, order_id)
-    # No real payment happens: the confirmation ids below are placeholders from the mock processor.
-    payment_id = f"mockpay_{secrets.token_hex(6)}"
+    receipt_payload = checkout_receipt.model_dump(mode="json", exclude_none=True)
+    receipt_payload.update({
+        "order_id": order_id,
+        "offer_id": offer_ids[0] if offer_ids else None,
+        "offer_ids": offer_ids,
+        "offer_hash": offer_hashes[0] if offer_hashes else None,
+        "offer_hashes": offer_hashes,
+        "mandate_id": mandate_id,
+        "total": total,
+        "iat": int(time.time()),
+    })
+    # payment_id is a Stripe PaymentIntent id when the buyer charged a card; otherwise a mock id.
     payment_receipt = PaymentReceipt(root=PaymentReceiptSuccess(
         status="Success", iss=PAYMENT_PROCESSOR, iat=int(time.time()),
         reference=mandate_checks.closed_reference(payment_mandate),
         payment_id=payment_id, psp_confirmation_id=payment_id, network_confirmation_id=payment_id,
     ))
     return {
-        "checkout_receipt_jwt": keys.sign(checkout_receipt.model_dump(mode="json", exclude_none=True)),
+        "checkout_receipt_jwt": keys.sign(receipt_payload),
         "payment_receipt_jwt": keys.sign(payment_receipt.model_dump(mode="json", exclude_none=True)),
     }
 
 
 def reset() -> None:
     _checkouts.clear()
+    offer_store.reset()

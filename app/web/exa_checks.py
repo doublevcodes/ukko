@@ -129,14 +129,34 @@ def substitute_check(substitute_product: str, constraint: str, product_id: str |
 
 
 def price_check(product_name: str, price: Decimal, per: str, product_id: str | None = None) -> WebFinding:
-    """Is the quoted price unusually high compared with prices seen on the web?"""
-    query = f"{product_name} price per {per} in Finland"
-    question = (f"The supplier quotes {price:.2f} EUR per {per} (excluding VAT) for '{product_name}'. "
-                "Compared with prices in the sources, is that unusually high?")
+    """Is the quoted price unusually high compared with prices seen on the web?
+
+    The Valio quote is wholesale excluding VAT. Web hits are usually consumer/shop
+    prices (often including VAT). The finding must state both bases so they are
+    not treated as like-for-like.
+    """
+    query = f"{product_name} wholesale foodservice price per {per} Finland excluding VAT"
+    question = (
+        f"Valio Aimo quotes {price:.2f} EUR per {per} wholesale, excluding VAT, for '{product_name}'. "
+        "Public web sources are usually consumer shop prices (often including VAT), so they are "
+        "not like-for-like. Say whether the wholesale excl.-VAT quote looks unusually high for "
+        "foodservice, and in your summary name both price bases (wholesale excl. VAT vs shop/consumer)."
+    )
     wording = judge.Wording(
-        nothing_found=f"No comparable public prices were found for {product_name}.",
-        serious="", concern="the quote is clearly higher (roughly 30% or more) than comparable prices in the sources",
-        clear="the quote is in line with, or below, comparable prices in the sources",
+        nothing_found=(
+            f"No comparable prices were found for {product_name} "
+            "(Valio quote is wholesale excl. VAT; web hits are usually shop/consumer prices)."
+        ),
+        serious="",
+        concern=(
+            "the wholesale excl.-VAT quote is clearly higher (roughly 30% or more) than "
+            "comparable foodservice prices in the sources — say so, and note if you only had "
+            "consumer/shop prices to compare against"
+        ),
+        clear=(
+            "the wholesale excl.-VAT quote is in line with, or below, comparable prices in the "
+            "sources (state whether those sources were wholesale or shop/consumer)"
+        ),
     )
     return _cached(("price", product_id or product_name, str(price)),
                    lambda: _run("price_sanity", product_id, query, question, wording))

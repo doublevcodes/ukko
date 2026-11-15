@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stockpot: approve an order</title>
+  <title>Ukko: approve an order</title>
   <link rel="stylesheet" href="/static/style.css">
   <style>
     /* A phone held in the hand: slightly larger type than the dashboard, and big buttons for thumbs. */
@@ -15,7 +15,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="logo">S</span><div class="brand-name">Stockpot <span>Prep OS</span></div></div>
+    <div class="brand"><span class="logo">U</span><div class="brand-name">Ukko</div></div>
     <span class="chip">Approval</span>
   </header>
   <main>
@@ -39,10 +39,13 @@
     async function load() {
       const response = await fetch(`/phone/${code}`);
       if (!response.ok) {
-        content.innerHTML = `<h2>This link is no longer valid</h2><p>The order was already approved or rejected, or Stockpot was restarted.</p>`;
+        content.innerHTML = `<h2>This link is no longer valid</h2><p>The order was already approved or rejected, or Ukko was restarted.</p>`;
         return;
       }
-      content.innerHTML = decisionHtml(await response.json());
+      const data = await response.json();
+      const total = data.decision?.chosen_plan || data.decision?.order_confirmation
+        ? summaryHtml(data.decision, "") : "";
+      content.innerHTML = decisionHtml(data) + total;
       buttons.hidden = false;
     }
 
@@ -58,7 +61,7 @@
         return;
       }
       content.innerHTML = action === "approve"
-        ? `<h2>Approved ✓</h2><p>Your approval was signed. Stockpot is re-checking the price and stock and placing the order. Watch the dashboard for the confirmation.</p>`
+        ? `<h2>Approved ✓</h2><p>Your approval was signed. Ukko is re-checking the price and stock and placing the order. Watch the dashboard for the confirmation.</p>`
         : `<h2>Rejected</h2><p>Nothing was ordered.</p>`;
     });
 

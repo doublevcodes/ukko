@@ -129,7 +129,7 @@ def _closed_mandates(checkout: dict[str, Any], supplier: Merchant, buyer_id: str
     checkout_hash = compute_sha256_b64url(checkout["checkout_jwt"])
     total = checkout["checkout"]["totals"][1]["amount"]
     invoice = PaymentInstrument(id=f"account:{buyer_id}", type="invoice_on_account",
-                                description="Invoice on account (demo, no money moves)")
+                                description="Kitchen card on file (Stripe test); AP2 authorises the cart")
     return (
         CheckoutMandate(checkout_jwt=checkout["checkout_jwt"], checkout_hash=checkout_hash, **window),
         PaymentMandate(transaction_id=checkout_hash, payee=supplier, payment_instrument=invoice,
@@ -156,8 +156,11 @@ def sign_as_manager(manager: JWK, checkout: dict[str, Any], supplier: Merchant, 
     )
 
 
-def receipts_match(order: dict[str, Any], checkout_mandate: str, payment_mandate: str, supplier_key: JWK) -> bool:
-    """Check the supplier's signed receipts really refer to the mandates we sent."""
+def receipts_match(
+    order: dict[str, Any], checkout_mandate: str, payment_mandate: str, supplier_key: JWK,
+    *, expected_offer_hashes: list[str] | None = None, expected_mandate_id: str | None = None,
+) -> bool:
+    """Check the supplier's signed receipts really refer to the mandates (and offer) we sent."""
     try:
         checkout_receipt = verify_jwt(order["checkout_receipt_jwt"], supplier_key)
         payment_receipt = verify_jwt(order["payment_receipt_jwt"], supplier_key)
@@ -167,10 +170,22 @@ def receipts_match(order: dict[str, Any], checkout_mandate: str, payment_mandate
     def reference(token: str) -> str:
         return compute_sha256_b64url(_client.get_closed_mandate_jwt(token))
 
-    return (
+    ok = (
         checkout_receipt.get("status") == "Success"
         and checkout_receipt.get("order_id") == order.get("order_id")
         and checkout_receipt.get("reference") == reference(checkout_mandate)
         and payment_receipt.get("status") == "Success"
         and payment_receipt.get("reference") == reference(payment_mandate)
     )
+    if not ok:
+        return False
+    if expected_offer_hashes:
+        receipt_hashes = checkout_receipt.get("offer_hashes") or (
+            [checkout_receipt["offer_hash"]] if checkout_receipt.get("offer_hash") else []
+        )
+        if list(receipt_hashes) != list(expected_offer_hashes):
+            return False
+    if expected_mandate_id and checkout_receipt.get("mandate_id"):
+        if checkout_receipt.get("mandate_id") != expected_mandate_id:
+            return False
+    return True

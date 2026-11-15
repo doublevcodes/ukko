@@ -9,6 +9,9 @@ allowed_categories:
 - dairy
 - energy drinks
 - plant-based drinks
+- snacks and chips
+- coffee drinks
+- biscuits
 substitutes_require_approval: true
 late_delivery_requires_approval: true
 web_caution_requires_approval: true

@@ -17,6 +17,9 @@ mcp
 cryptography
 jwcrypto
 
+# Stripe test-mode charges (saved card → PaymentIntent on every order)
+stripe
+
 # QR code for the phone approval link
 segno
 

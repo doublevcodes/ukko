@@ -57,9 +57,16 @@ class Offer(BaseModel):
     earliest_delivery: date | None = None
     attributes: list[str] = []  # claims such as FREE_FROM_LACTOSE
     labels: list[str] = []  # certificates such as EU_ORGANIC_FARMING
-    offer_id: str = ""  # the supplier's quote id
+    offer_id: str = ""  # the supplier's quote id (JWT jti)
     expires_at: datetime | None = None
     offer_jwt: str = ""  # extension: the supplier's signature over this offer
+    offer_hash: str = ""  # SHA-256 of offer_jwt
+    offer_claims: dict[str, Any] = {}  # decoded signed payload (trust protocol)
+    trust_checks: list[dict[str, Any]] = []  # named pass/fail checks from app.trust
+    gtin: str | None = None
+    origin_country: str | None = None
+    origin_producer: str | None = None
+    origin_certificates: list[dict[str, Any]] = []
     # Extensions below.
     sales_unit: str = ""
     comparison_price: Decimal | None = None  # per litre or kilo
@@ -145,6 +152,11 @@ class OrderConfirmation(BaseModel):
     payment_receipt_jwt: str
     receipts_verified: bool = False
     payment_method: str = ""
+    # Trust chain: mandate → offer → order → receipt.
+    offer_ids: list[str] = []
+    offer_hashes: list[str] = []
+    mandate_id: str = ""
+    trust_checks: list[dict[str, Any]] = []
 
 
 class Alternative(BaseModel):

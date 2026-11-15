@@ -27,11 +27,34 @@ class PlanSet(BaseModel):
     notes: list[str] = []  # facts for the log, such as why the exact item cannot be used
 
 
+_SPECIALTY = (
+    "coffee milk", "kahvimaito", "latte", "cappuccino", "barista", "chocolate milk",
+    "cacao", "milkshake", "protein drink", "cooking cream", "creamer", "milk powder",
+)
+
+
+def _plainness(offer: Offer, request: OrderRequest) -> int:
+    """Lower is better. Specialty drinks score high; overlap with the request scores low.
+
+    Price is deliberately ignored: the cheapest quote must not decide what counts as exact.
+    """
+    name = (offer.name or "").lower()
+    score = 0
+    for token in _SPECIALTY:
+        if token in name:
+            score += 100
+    wanted = {token for token in (request.item_description + " " + (request.search_terms or "")).lower().split()
+              if len(token) > 2 and token not in {"the", "and", "for", "milk", "maito", "free", "lactose"}}
+    score -= 5 * sum(1 for token in wanted if token in name)
+    score += len(name) // 25
+    return score
+
+
 def choose_exact(request: OrderRequest, offers: list[Offer]) -> str | None:
     """For a typed request, pick the product to treat as "the exact item".
 
-    The best is one that can supply everything on time; then one that matches
-    the stated preferences; then the lowest price per litre or kilo.
+    Prefer one that can supply everything on time, then preference match, then the
+    plainest product name. Price does not decide what counts as exact.
     """
     usable = [offer for offer in offers if rules.why_unusable(offer, request) is None]
 
@@ -39,7 +62,7 @@ def choose_exact(request: OrderRequest, offers: list[Offer]) -> str | None:
         wanted = rules.units_for(offer, request, request.quantity)
         complete = rules.on_time(offer, request) and rules.units_in_stock(offer, wanted) == wanted
         return (not complete, -rules.preference_matches(offer, request),
-                rules.price_per_unit(offer, request), -(offer.delivery_reliability or 0))
+                _plainness(offer, request), -(offer.delivery_reliability or 0), offer.name.lower())
 
     return min(usable, key=order).product_id if usable else None
 

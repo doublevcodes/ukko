@@ -84,7 +84,8 @@ def test_a_look_writes_visible_counts_onto_every_encounter_food(monkeypatch):
     monkeypatch.setattr(llm, "complete_json_with_image",
                         lambda *_: {"detections": [box(count=4), box(corners=(200, 600, 800, 900), count=1)]})
     vision.set_reorder_handler(None)
-    vision.look_once()
+    for _ in range(vision.COUNT_AGREE):
+        vision.look_once()
     by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
     assert by_key[MILK]["quantity"] == 5 and by_key[MILK]["level"] == "full" and by_key[MILK]["device_id"] == "vision"
     assert by_key[MILK]["product_id"] == "1001"
@@ -92,13 +93,64 @@ def test_a_look_writes_visible_counts_onto_every_encounter_food(monkeypatch):
     assert by_key[MYSTERY]["product_id"] is None
 
 
-def test_a_fractional_count_is_kept_as_a_numeric_estimate():
+def test_a_fractional_count_is_rounded_to_a_whole_number():
     (found,) = boxes(box(count=3.5))
-    assert found.quantity == 3.5
+    assert found.quantity == 4  # drinks are whole units
     vision.set_reorder_handler(None)
-    vision.apply_shelf_counts([found], config.load_camera_foods(), state.now())
+    foods = config.load_camera_foods()
+    for _ in range(vision.COUNT_AGREE):
+        vision.apply_shelf_counts([found], foods, state.now())
     by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
-    assert by_key[MILK]["quantity"] == 3.5
+    assert by_key[MILK]["quantity"] == 4
+
+
+def test_a_single_missed_look_does_not_change_the_confirmed_count(monkeypatch):
+    """Counts only update when several consecutive looks agree on the same restock band."""
+    vision.set_reorder_handler(None)
+    frames = iter([
+        {"detections": [box(count=4)]},
+        {"detections": [box(count=4)]},
+        {"detections": [box(count=4)]},  # confirmed full at 4
+        {"detections": []},               # one miss → still show 4
+        {"detections": [box(count=4)]},
+    ])
+    monkeypatch.setattr(camera, "latest_frame", lambda: jpeg(b"shelf"))
+    monkeypatch.setattr(llm, "complete_json_with_image", lambda *_: next(frames))
+    for _ in range(3):
+        vision.look_once()
+    by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
+    assert by_key[MILK]["quantity"] == 4 and by_key[MILK]["level"] == "full"
+    vision.look_once()  # miss
+    by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
+    assert by_key[MILK]["quantity"] == 4 and by_key[MILK]["level"] == "full"
+    vision.look_once()  # back to 4; buffer not yet agreed on empty
+    by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
+    assert by_key[MILK]["quantity"] == 4 and by_key[MILK]["level"] == "full"
+
+
+def test_empty_and_low_counts_agree_so_the_streak_can_advance(monkeypatch):
+    """0 (empty) and 1 (low) are the same restock band — they confirm and can reorder."""
+    milk_started: list[str] = []
+
+    def capture(records: list) -> None:
+        milk_started.extend(record.product_key for record in records if record.product_key == MILK)
+
+    # Alternate empty/low readings: previously these never agreed and the counter stuck.
+    frames = iter([
+        {"detections": []},
+        {"detections": [box(count=1)]},
+        {"detections": []},
+    ])
+    monkeypatch.setattr(camera, "latest_frame", lambda: jpeg(b"shelf"))
+    monkeypatch.setattr(llm, "complete_json_with_image", lambda *_: next(frames))
+    vision.set_reorder_handler(capture)
+    vision.look_once()  # buffer [0]
+    assert milk_started == []
+    vision.look_once()  # [0,1] agree restock → streak 1 → reorder (CONFIRM_LOOKS=1)
+    assert MILK in milk_started
+    by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
+    assert by_key[MILK]["level"] in {"low", "empty"}
+    assert by_key[MILK]["armed"] is False
 
 
 def test_an_answer_in_the_wrong_shape_gives_no_boxes():
@@ -124,75 +176,77 @@ def test_a_look_puts_the_boxes_in_the_dashboard_state(monkeypatch):
 
 
 def test_a_drop_from_full_needs_several_low_looks_before_reorder(monkeypatch):
-    started: list[str] = []
+    milk_started: list[str] = []
 
     def capture(records: list) -> None:
-        started.extend(record.product_key for record in records)
+        milk_started.extend(record.product_key for record in records if record.product_key == MILK)
 
-    frames = iter([
-        {"detections": [box(count=4)]},   # full → arms, streak 0
-        {"detections": [box(count=1)]},   # low look 1 → no reorder
-        {"detections": [box(count=1)]},   # low look 2 → no reorder
-        {"detections": [box(count=1)]},   # low look 3 → reorder
-        {"detections": [box(count=1)]},   # still low → no second reorder
-    ])
+    # COUNT_AGREE full looks to confirm full, then COUNT_AGREE lows for the first confirmed
+    # low (streak 1), then CONFIRM_LOOKS-1 more low looks to reach the reorder threshold.
+    lows_needed = vision.COUNT_AGREE + vision.CONFIRM_LOOKS - 1
+    frames = iter(
+        [{"detections": [box(count=4)]}] * vision.COUNT_AGREE
+        + [{"detections": [box(count=1)]}] * (lows_needed + 1)  # +1 still-low after reorder
+    )
     monkeypatch.setattr(camera, "latest_frame", lambda: jpeg(b"shelf"))
     monkeypatch.setattr(llm, "complete_json_with_image", lambda *_: next(frames))
     vision.set_reorder_handler(capture)
+    looks_before_fire = vision.COUNT_AGREE + lows_needed  # fires on this many-th look
+    for _ in range(looks_before_fire - 1):
+        vision.look_once()
+        assert milk_started == []
     vision.look_once()
-    assert started == []
+    assert milk_started == [MILK]
+    milk_started.clear()
     vision.look_once()
-    assert started == []
-    vision.look_once()
-    assert started == []
-    vision.look_once()
-    assert started == [MILK]
-    started.clear()
-    vision.look_once()
-    assert started == []
+    assert milk_started == []
 
 
 def test_a_full_look_mid_streak_resets_before_reorder(monkeypatch):
-    started: list[str] = []
+    milk_started: list[str] = []
 
     def capture(records: list) -> None:
-        started.extend(record.product_key for record in records)
+        milk_started.extend(record.product_key for record in records if record.product_key == MILK)
 
-    frames = iter([
-        {"detections": [box(count=4)]},   # full
-        {"detections": [box(count=1)]},   # low 1
-        {"detections": [box(count=1)]},   # low 2
-        {"detections": [box(count=4)]},   # full again → reset streak
-        {"detections": [box(count=1)]},   # low 1 again → still no reorder
-        {"detections": [box(count=1)]},   # low 2
-        {"detections": [box(count=1)]},   # low 3 → reorder
-    ])
+    # Confirm full, one low (buffer disagrees → stay full), full again, then confirmed lows reorder.
+    lows_needed = vision.COUNT_AGREE + vision.CONFIRM_LOOKS - 1
+    frames = iter(
+        [{"detections": [box(count=4)]}] * vision.COUNT_AGREE
+        + [{"detections": [box(count=1)]}]  # one low — does not confirm yet
+        + [{"detections": [box(count=4)]}] * vision.COUNT_AGREE  # full again
+        + [{"detections": [box(count=1)]}] * lows_needed
+    )
     monkeypatch.setattr(camera, "latest_frame", lambda: jpeg(b"shelf"))
     monkeypatch.setattr(llm, "complete_json_with_image", lambda *_: next(frames))
     vision.set_reorder_handler(capture)
-    for _ in range(6):
+    before_reorder = vision.COUNT_AGREE + 1 + vision.COUNT_AGREE + lows_needed
+    for _ in range(before_reorder - 1):
         vision.look_once()
-        assert started == []
+        assert milk_started == []
     vision.look_once()
-    assert started == [MILK]
+    assert milk_started == [MILK]
 
 
-def test_the_first_look_empty_does_not_start_a_reorder_streak(monkeypatch):
+def test_empty_from_the_start_orders_after_confirmed_lows(monkeypatch):
     started: list[str] = []
 
     def capture(records: list) -> None:
         started.extend(record.product_key for record in records)
 
-    # Mystery soda is never seen → empty from the first look; must not order.
-    frames = iter([{"detections": [box(count=4)]}] * 5)
+    # Mystery soda is never in frame → empty. No prior full is required; confirmed lows reorder.
+    # Milk stays full in every frame so only mystery should fire.
+    lows_needed = vision.COUNT_AGREE + vision.CONFIRM_LOOKS - 1
+    frames = iter([{"detections": [box(count=4)]}] * (lows_needed + 1))
     monkeypatch.setattr(camera, "latest_frame", lambda: jpeg(b"shelf"))
     monkeypatch.setattr(llm, "complete_json_with_image", lambda *_: next(frames))
     vision.set_reorder_handler(capture)
-    for _ in range(5):
+    for _ in range(lows_needed - 1):
         vision.look_once()
-    assert started == []
+        assert MYSTERY not in started
+    vision.look_once()
+    assert MYSTERY in started
     by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
-    assert by_key[MYSTERY]["level"] == "empty" and by_key[MYSTERY]["low_streak"] == 0
+    assert by_key[MYSTERY]["level"] == "empty" and by_key[MYSTERY]["armed"] is False
 
 
 def test_no_video_means_no_boxes_and_no_question_to_the_model(monkeypatch):
@@ -228,3 +282,27 @@ def test_the_picture_is_sent_to_the_model_with_the_question(monkeypatch):
     picture, question = sent["contents"]
     assert isinstance(picture, types.Part) and picture.inline_data.data == jpeg(b"shelf")
     assert picture.inline_data.mime_type == "image/jpeg" and question == "Where is the milk?"
+
+
+def test_reorder_below_controls_when_a_count_is_low_enough_to_order(monkeypatch):
+    """A higher reorder_below means a count that used to be 'full' now triggers a reorder."""
+    from decimal import Decimal
+
+    milk_started: list[str] = []
+
+    def capture(records: list) -> None:
+        milk_started.extend(record.product_key for record in records if record.product_key == MILK)
+
+    state.shelf[MILK].reorder_below = Decimal(5)
+    # Persist so _ensure_shelf_row does not overwrite the live threshold from the file.
+    config.update_camera_food_reorder(MILK, reorder_below=Decimal(5), reorder_quantity=Decimal(24))
+
+    frames = iter([{"detections": [box(count=4)]}] * vision.COUNT_AGREE)
+    monkeypatch.setattr(camera, "latest_frame", lambda: jpeg(b"shelf"))
+    monkeypatch.setattr(llm, "complete_json_with_image", lambda *_: next(frames))
+    vision.set_reorder_handler(capture)
+    for _ in range(vision.COUNT_AGREE):
+        vision.look_once()
+    assert MILK in milk_started
+    by_key = {row["product_key"]: row for row in state.snapshot()["shelf"]}
+    assert by_key[MILK]["level"] == "low" and by_key[MILK]["quantity"] == 4

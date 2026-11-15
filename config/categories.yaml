@@ -68,3 +68,18 @@ flour:
 
 energy drinks:
   - "22701"
+
+# Shelf closest-matches for Estrella crisps and similar bar snacks.
+snacks and chips:
+  - "21990"  # potato chips, crisps, cheese snacks
+  - "21993"  # rye crisps / savoury crisp snacks
+
+# Ready-to-drink coffee (Nescafé Latte can closest matches).
+coffee drinks:
+  - "22413"  # iced coffee / latte milk coffee drinks
+  - "22412"  # instant coffee / coffee drink powders
+
+# Sweet biscuits (Kantolan Ballerina and similar).
+biscuits:
+  - "21130"  # filled biscuits
+  - "21140"  # biscuits and cookie assortments

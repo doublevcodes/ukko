@@ -18,6 +18,9 @@ from app import config, settings
 from app.models import AuditEntry, Decision, Level, Offer, OrderRequest, PolicyConfig, Unit
 
 OPEN_STATUSES = {"working", "needs_clarification", "awaiting_approval"}
+# Camera must not start another order while one of these is the latest for that product
+# (ordered stays blocked until the shelf is confirmed full and re-armed).
+REORDER_BLOCK_STATUSES = OPEN_STATUSES | {"ordered"}
 AUDIT_SHOWN = 100
 REQUESTS_SHOWN = 20
 
@@ -53,6 +56,8 @@ class ShelfLevel(BaseModel):
     armed: bool = True
     # Consecutive low/empty vision looks after a full; reorder waits until this reaches CONFIRM_LOOKS.
     low_streak: int = 0
+    # Recent raw counts from vision; quantity/level only update when the last few agree.
+    recent_counts: list[float] = []
     # When the shelf was first seen full after a refill, and how many units were visible then:
     # the start of the usage cycle (app/forecast.py).
     full_since: datetime | None = None
@@ -68,8 +73,25 @@ class ShelfLevel(BaseModel):
     search_terms: str = ""
     full_quantity: Decimal | None = None
     low_quantity: Decimal | None = None
+    # Order when the camera sees this many units or fewer (default 2 from shelf.yaml).
+    reorder_below: Decimal | None = None
     cover_days: int = 7
     typical_daily_use: Decimal | None = None
+    # Reorder model (REORDER_SPEC.md): service class, case size, packs, storage, shelf life.
+    service_class: str = "standard"
+    units_per_visible_item: Decimal = Decimal(1)
+    pack_size: Decimal = Decimal(24)
+    max_stock_units: Decimal = Decimal(144)
+    shelf_life_days: int | None = None
+    # Live usage estimate (units per model day) and open-order tracking.
+    usage_rate_d: float | None = None
+    usage_updated_at: datetime | None = None
+    usage_observations: int = 0
+    on_order_units: float = 0.0
+    on_order_since: datetime | None = None
+    on_order_lead_days: float | None = None
+    # Plain-language "why" for the last model decision (dashboard expander).
+    reorder_why: str | None = None
 
 
 class Box(BaseModel):
@@ -126,8 +148,13 @@ def load() -> None:
                 usual_quantity=fields["usual_quantity"], constraints=fields["constraints"],
                 preferences=fields["preferences"], lead_time_days=fields["lead_time_days"],
                 search_terms=fields["search_terms"], full_quantity=fields["full_quantity"],
-                low_quantity=fields["low_quantity"], cover_days=fields["cover_days"],
-                typical_daily_use=fields["typical_daily_use"],
+                low_quantity=fields["low_quantity"], reorder_below=fields["reorder_below"],
+                cover_days=fields["cover_days"], typical_daily_use=fields["typical_daily_use"],
+                service_class=str(fields["service_class"]),
+                units_per_visible_item=fields["units_per_visible_item"],  # type: ignore[arg-type]
+                pack_size=fields["pack_size"],  # type: ignore[arg-type]
+                max_stock_units=fields["max_stock_units"],  # type: ignore[arg-type]
+                shelf_life_days=fields["shelf_life_days"],  # type: ignore[arg-type]
             )
 
 
@@ -167,6 +194,36 @@ def open_request_for(product_key: str) -> RequestRecord | None:
     return None
 
 
+def latest_request_for(product_key: str) -> RequestRecord | None:
+    """The newest request for this shelf product, if any."""
+    latest = None
+    with lock:
+        for record in requests.values():
+            if record.product_key == product_key:
+                latest = record
+    return latest
+
+
+def blocks_camera_reorder(product_key: str) -> RequestRecord | None:
+    """A request that should stop the camera starting another order for this product.
+
+    In-progress work always blocks. An already-placed order blocks until the shelf
+    has been confirmed full again (armed), so a low reading cannot double-order.
+    """
+    latest = latest_request_for(product_key)
+    if latest is None:
+        return None
+    status = latest.decision.status
+    if status in OPEN_STATUSES:
+        return latest
+    if status == "ordered":
+        with lock:
+            row = shelf.get(product_key)
+        if row is not None and not row.armed:
+            return latest
+    return None
+
+
 def by_token(token: str) -> RequestRecord | None:
     with lock:
         return next((record for record in requests.values() if token and record.approval_token == token), None)
@@ -182,10 +239,14 @@ def without_signatures(value: Any) -> Any:
 
 
 def request_view(record: RequestRecord) -> dict[str, Any]:
-    """One request as the dashboard and the phone page see it."""
+    """One request as the dashboard and the phone page see it.
+
+    Keeps offer_jwt on the chosen plan so the Verification panel can show the
+    signed token. Audit finalise still strips tokens via without_signatures.
+    """
     view = record.model_dump(mode="json", exclude={"offers", "candidate_ids", "approval_token", "timeline"})
     view["timeline"] = [entry.model_dump(mode="json", exclude={"details"}) for entry in record.timeline]
-    return without_signatures(view)
+    return view
 
 
 def snapshot() -> dict[str, Any]:

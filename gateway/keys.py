@@ -3,6 +3,9 @@
 Every offer, checkout and receipt the gateway issues is signed with this key,
 so an agent can later prove what the supplier promised. The public half is
 published at /.well-known/jwks.json.
+
+We use ES256 (P-256) because that is what the AP2 SDK signs and verifies with.
+The private key never leaves the gateway; buyers only fetch the JWKS.
 """
 
 from __future__ import annotations
@@ -16,7 +19,8 @@ from jwcrypto.jwk import JWK
 
 from gateway import settings
 
-SUPPLIER_KEY_ID = "valio-aimo-gateway-1"
+# kid lets a buyer pick the right key when the supplier rotates later.
+SUPPLIER_KEY_ID = "valio-aimo-2026-11"
 _key: JWK | None = None
 
 
@@ -31,10 +35,14 @@ def load_or_create(path: Path, key_id: str) -> JWK:
     return key
 
 
+def key_path() -> Path:
+    return settings.GATEWAY_DATA_DIR / "keys" / "supplier.json"
+
+
 def supplier_key() -> JWK:
     global _key
     if _key is None:
-        _key = load_or_create(settings.GATEWAY_DATA_DIR / "keys" / "supplier.json", SUPPLIER_KEY_ID)
+        _key = load_or_create(key_path(), SUPPLIER_KEY_ID)
     return _key
 
 
@@ -44,9 +52,20 @@ def reset() -> None:
     _key = None
 
 
+def public_jwk() -> dict[str, Any]:
+    """The public half only, ready to publish. Never includes the private `d`."""
+    material = json.loads(supplier_key().export_public())
+    material.pop("d", None)
+    material["alg"] = "ES256"
+    material["use"] = "sig"
+    if "kid" not in material:
+        material["kid"] = SUPPLIER_KEY_ID
+    return material
+
+
 def jwks() -> dict[str, list[dict[str, Any]]]:
-    """The public keys, in the standard JWKS shape."""
-    return {"keys": [json.loads(supplier_key().export_public())]}
+    """The public keys, in the standard JWKS shape (RFC 7517)."""
+    return {"keys": [public_jwk()]}
 
 
 def sign(payload: dict[str, Any]) -> str:

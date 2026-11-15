@@ -40,6 +40,8 @@ class Product(BaseModel):
     claims: list[str] = []
     labels: list[str] = []
     country_of_origin: str | None = None
+    gtin: str | None = None  # sales-unit GTIN when the catalogue has one
+    producer: str | None = None  # manufacturer name from Synkka, when present
     listed_substitutes: list[str] = []
     delivery_reliability: float | None = None
     co2_kg_per_kg: float | None = None
@@ -79,6 +81,8 @@ def _slim(raw: dict) -> dict:
         "claims": groups.get("nutritionalClaim", []),
         "labels": [x for x in groups.get("packagingMarkedLabel", []) if x not in _TEMPERATURE_LABELS],
         "country_of_origin": raw.get("countryOfOrigin"),
+        "gtin": raw.get("salesUnitGtin") or data.get("gtin"),
+        "producer": ((data.get("producers") or [{}])[0] or {}).get("name"),
         "listed_substitutes": [s["substituteProduct"] for s in raw.get("substitutions") or []],
     }
 

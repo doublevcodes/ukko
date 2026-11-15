@@ -130,6 +130,9 @@ def lookup(record: RequestRecord) -> bool:
     except (GatewayError, GatewayRefused) as error:
         fail(record, "lookup", f"The supplier could not answer. {error}")
         return False
+    if found.ask:
+        _ask(record, "lookup", found.ask)
+        return False
     if not found.offers:
         needs = f" marked {', '.join(request.constraints)}" if request.constraints else ""
         nearby = next((note[len("Nearby catalogue names: "):] for note in found.notes
@@ -141,11 +144,32 @@ def lookup(record: RequestRecord) -> bool:
         return False
     record.offers, record.candidate_ids, record.exact_id = found.offers, found.candidate_ids, found.exact_id
     orderable = sum(1 for offer in found.offers if offer.orderable)
-    state.log(record.id, "lookup", f"Got live, signed offers from Valio for {len(found.offers)} products; "
-              f"{orderable} can be ordered now. {' '.join(found.notes)}".strip(),
-              offers=[{"product_id": o.product_id, "name": o.name, "unit_price": str(o.unit_price), "orderable": o.orderable,
-                       "available": o.available_quantity, "offer_id": o.offer_id,
-                       "pieces_per_sales_unit": str(o.pieces_per_sales_unit)} for o in found.offers])
+    kid = "valio-aimo-2026-11"
+    if found.offers and found.offers[0].trust_checks:
+        for check in found.offers[0].trust_checks:
+            if check.get("name") == "signature" and "(" in (check.get("reason") or ""):
+                kid = (check["reason"].rsplit("(", 1)[-1] or "").rstrip(").") or kid
+                break
+    valid_until = ""
+    expiries = [o.expires_at for o in found.offers if o.expires_at]
+    if expiries:
+        valid_until = f" Valid until {min(expiries):%H:%M}."
+    state.log(
+        record.id, "lookup",
+        f"Got {len(found.offers)} signed offers from Valio. All {len(found.offers)} signatures match "
+        f"Valio's published key ({kid}).{valid_until} "
+        f"{orderable} can be ordered now. {' '.join(found.notes)}".strip(),
+        offers=[{"product_id": o.product_id, "name": o.name, "unit_price": str(o.unit_price), "orderable": o.orderable,
+                 "available": o.available_quantity, "offer_id": o.offer_id,
+                 "pieces_per_sales_unit": str(o.pieces_per_sales_unit)} for o in found.offers],
+    )
+    for refusal in found.refused:
+        state.log(
+            record.id, "lookup",
+            f"Refused an offer for {refusal.get('name') or refusal.get('product_id')}: "
+            f"{refusal.get('reason')} It was not used.",
+            refusal=refusal,
+        )
     return True
 
 
@@ -241,18 +265,43 @@ def act(record: RequestRecord, approved_by_person: bool = False) -> None:
         confirmation = ordering.place(record.request, decision.chosen_plan, state.policy, approved_by_person)
     except ordering.Replan as change:
         return _replan(record, str(change))
+    except ordering.TrustBlocked as blocked:
+        decision.policy_result = PolicyResult(outcome="deny", reasons=[str(blocked)])
+        decision.status, decision.message = "rejected", f"Stopped by trust checks. {NOTHING_ORDERED}"
+        state.log(record.id, "order", f"Refused before ordering: {blocked} It was not used.")
+        return
     except ordering.SupplierWantsAPerson as refusal:
         reason = f"Supplier's check: Valio's gateway did not accept the agent's standing authority for this order ({refusal})."
         decision.policy_result = PolicyResult(outcome="needs_approval", reasons=[reason])
         state.log(record.id, "order", f"{reason} No order was placed.")
         return _wait_for_person(record)
+    except ordering.PaymentFailed as error:
+        return fail(record, "order", f"Payment failed. {error}")
     except (GatewayError, GatewayRefused) as error:
         return fail(record, "order", f"The order could not be placed. {error}")
     decision.order_confirmation, decision.status = confirmation, "ordered"
     who = "approved and signed by a person" if confirmation.flow == "human_present" else "signed by the agent within its standing limits"
-    receipts = "The supplier's signed receipts were checked." if confirmation.receipts_verified else "Receipts were not re-checked."
-    state.log(record.id, "order", f"Order {confirmation.order_id} placed for {confirmation.total:.2f} EUR, {who} (AP2). {receipts}",
-              confirmation=confirmation.model_dump(mode="json"))
+    receipts = (
+        "Receipt verified: signed by Valio's key and quotes the same offer and approval."
+        if confirmation.receipts_verified else "Receipts were not re-checked."
+    )
+    paid = f" Paid with {confirmation.payment_method}." if confirmation.payment_method else ""
+    state.log(
+        record.id, "order",
+        "Checked the offer again before ordering: signature valid, order matches the offer. "
+        f"Order {confirmation.order_id} placed for {confirmation.total:.2f} EUR, {who} (AP2).{paid} {receipts}",
+        confirmation=confirmation.model_dump(mode="json"),
+    )
+    # Track units on order so IP stays above R until the camera sees the delivery.
+    if record.product_key and record.request is not None:
+        with state.lock:
+            row = state.shelf.get(record.product_key)
+            if row is not None:
+                qty = float(record.request.quantity)
+                row.on_order_units = float(row.on_order_units or 0) + qty
+                row.on_order_since = state.now()
+                lead = row.lead_time_days if row.lead_time_days is not None else 2
+                row.on_order_lead_days = float(lead)
 
 
 def finalise(record: RequestRecord) -> None:

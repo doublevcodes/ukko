@@ -2,7 +2,8 @@
 
 An offer is the supplier's answer to "what would this cost and when could I
 have it?". Each one is signed and carries an expiry, so an agent can prove
-later what it was told.
+later what it was told. The JWT payload is the minimum trust-protocol claim
+set (identity, freshness, product, price, stock, origin).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from gateway import catalogue, keys, settings, units, valio_client
+from gateway import catalogue, keys, offer_store, settings, units, valio_client
 
 
 def read_availability(entry: dict[str, Any] | None, now: datetime) -> dict[str, Any]:
@@ -91,27 +92,83 @@ def _build_offer(product_id: str, availability: dict | None, price: dict | None,
     }
 
 
-def get_offers(product_ids: list[str], needed_by: date) -> dict[str, Any]:
+def _origin_block(offer: dict[str, Any]) -> dict[str, Any]:
+    """Origin and certificates only from catalogue data — never invented."""
+    labels = offer.get("labels") or []
+    certificates = [
+        {"type": "packagingMarkedLabel", "id": label, "issuer": "GS1 Synkka"}
+        for label in labels
+    ]
+    return {
+        "country": offer.get("country_of_origin"),
+        "producer": offer.get("producer"),
+        "certificates": certificates,
+    }
+
+
+def signed_claims(offer: dict[str, Any], audience: str, issued: datetime, expires: datetime, offer_id: str) -> dict[str, Any]:
+    """The minimum trust-protocol payload covered by the supplier's signature."""
+    pieces = offer.get("pieces_per_sales_unit") or "1"
+    try:
+        pack_size = int(Decimal(str(pieces)))
+    except Exception:  # noqa: BLE001
+        pack_size = 1
+    return {
+        "iss": settings.MERCHANT_ID,
+        "aud": audience,
+        "jti": offer_id,
+        "iat": int(issued.timestamp()),
+        "exp": int(expires.timestamp()),
+        "product": {
+            "product_id": offer["product_id"],
+            "gtin": offer.get("gtin"),
+            "name": offer.get("name"),
+        },
+        "price": {
+            "unit_price": offer.get("unit_price"),
+            "currency": offer.get("currency") or settings.CURRENCY,
+            "vat_basis": "excl",
+            "per": "piece",
+            "pack_size": pack_size,
+        },
+        "stock": {
+            "available_quantity": offer.get("available_quantity"),
+            "earliest_delivery": offer.get("earliest_delivery"),
+        },
+        "origin": _origin_block(offer),
+    }
+
+
+def get_offers(product_ids: list[str], needed_by: date, audience: str | None = None) -> dict[str, Any]:
     """Ask Valio for live price and availability, and return signed offers.
 
     Prices exclude VAT. Raises ValioError when Valio cannot be reached.
+    `audience` is the buyer the offer is made for (JWT `aud`).
     """
+    audience = audience or settings.DEFAULT_OFFER_AUDIENCE
     availability = valio_client.availability(product_ids, needed_by)
     prices = valio_client.price(product_ids, needed_by)
-    # Valio's clock decides whether a cut-off has passed; our own clock dates the signatures.
+    # Valio's clock decides whether a cut-off has passed; wall clock dates the signatures.
     valio_now = datetime.fromisoformat(availability["timeNow"])
     by_id_availability = {entry["productId"]: entry for entry in availability["products"]}
     by_id_price = {entry["productId"]: entry for entry in prices["products"]}
-    issued = datetime.now(valio_now.tzinfo).replace(microsecond=0)
+    issued = datetime.now().astimezone().replace(microsecond=0)
+    if valio_now.tzinfo is not None and issued.tzinfo is None:
+        issued = issued.replace(tzinfo=valio_now.tzinfo)
     expires = issued + timedelta(seconds=settings.OFFER_TTL_SECONDS)
 
     offers = []
     for product_id in product_ids:
         offer = _build_offer(product_id, by_id_availability.get(product_id), by_id_price.get(product_id), valio_now)
+        offer_id = f"off_{secrets.token_hex(8)}"
+        claims = signed_claims(offer, audience, issued, expires, offer_id)
+        token = keys.sign(claims)
+        offer_store.remember(token, claims)
         offer |= {
-            "offer_id": f"off_{secrets.token_hex(8)}", "needed_by": needed_by.isoformat(),
+            "offer_id": offer_id, "needed_by": needed_by.isoformat(),
             "issuer": settings.MERCHANT_ID, "issued_at": issued.isoformat(), "expires_at": expires.isoformat(),
+            "audience": audience, "offer_hash": offer_store.token_hash(token),
+            "offer_claims": claims, "offer_jwt": token,
         }
-        claims = {"iss": settings.MERCHANT_ID, "iat": int(issued.timestamp()), "exp": int(expires.timestamp())}
-        offers.append(offer | {"offer_jwt": keys.sign(offer | claims)})
+        offers.append(offer)
     return {"server_time": valio_now.isoformat(), "offers": offers}

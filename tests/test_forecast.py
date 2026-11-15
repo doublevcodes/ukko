@@ -18,19 +18,19 @@ def test_no_usage_measured_uses_the_shelf_setting_plus_bookings(world):
         amount = forecast.reorder("milk_lactose_free", product, "low", today)
     finally:
         forecast.DEMAND_FILE.unlink()
-    assert amount.daily_rate is None and amount.quantity == Decimal(130)  # 100 usual + 30 booked; day 60 is too far
+    assert amount.daily_rate is None and amount.quantity == Decimal(130)  # 100 configured + 30 booked; day 60 is too far
 
 
-def test_measured_usage_sets_the_amount(world):
-    product = config.load_shelf()["milk_lactose_free"]  # full = 100 l, low = 25 l, lead 3 + cover 7 days
+def test_measured_usage_is_reported_but_order_stays_configured(world):
+    product = config.load_shelf()["milk_lactose_free"]  # reorder_quantity = 100
     now = state.now()
     forecast.record_cycle("milk_lactose_free", product, now - timedelta(days=5), now, "low")  # 75 l in 5 days
     amount = forecast.reorder("milk_lactose_free", product, "low", now.date())
     assert amount.daily_rate == Decimal("15.0")
-    assert amount.quantity == Decimal(125)  # 15/day x 10 days - 25 on the shelf
+    assert amount.quantity == Decimal(100)  # configured reorder_quantity, not rate × cover
 
 
-def test_sensor_cycle_is_recorded_and_used(world, monkeypatch):
+def test_sensor_cycle_is_recorded_and_order_uses_configured_quantity(world, monkeypatch):
     start = state.now()
     monkeypatch.setattr(state, "now", lambda: start)
     intake.sensor_event(event("full"))
@@ -38,7 +38,7 @@ def test_sensor_cycle_is_recorded_and_used(world, monkeypatch):
     result, record = intake.sensor_event(event("empty"))  # 100 l in 2 days
     assert result == "request created" and forecast.daily_rate("milk_lactose_free") == Decimal(50)
     intake.run_sensor(record)
-    assert record.request.quantity == Decimal(500)  # 50/day x 10 days, nothing left on the shelf
+    assert record.request.quantity == Decimal(100)  # configured reorder_quantity
 
 
 def test_forecast_orders_before_the_shelf_runs_out(world, monkeypatch):
@@ -56,7 +56,7 @@ def test_forecast_orders_before_the_shelf_runs_out(world, monkeypatch):
         intake.run_sensor(raised[0])
     finally:
         forecast.DEMAND_FILE.unlink()
-    assert raised[0].request.quantity == Decimal(30)  # 4/day x 10 days + 90 booked - 100 on the shelf
+    assert raised[0].request.quantity == Decimal(190)  # 100 configured + 90 booked
 
 
 def test_camera_foods_not_seen_stocked_do_not_order(world):

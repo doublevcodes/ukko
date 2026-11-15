@@ -27,11 +27,11 @@ os.environ.update({
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import authority, config, gateway_client, llm, pipeline, state  # noqa: E402
+from app import authority, config, gateway_client, llm, payments, pipeline, state  # noqa: E402
 from app import settings as app_settings  # noqa: E402
 from app.models import PolicyConfig  # noqa: E402
 from app.web import exa_checks  # noqa: E402
-from gateway import catalogue, keys, ledger, merchant, supplier_log, valio_client  # noqa: E402
+from gateway import catalogue, keys, ledger, merchant, offer_store, supplier_log, valio_client  # noqa: E402
 from gateway import settings as gateway_settings  # noqa: E402
 from gateway.main import app as gateway_app  # noqa: E402
 from tests import fakes  # noqa: E402
@@ -73,7 +73,7 @@ foods:
 def _fresh_files() -> None:
     """Empty the data folder and write the fixture catalogue and shelf."""
     shutil.rmtree(gateway_settings.GATEWAY_DATA_DIR, ignore_errors=True)
-    for name in ("audit_log.jsonl", "catalogue_index.json", "usage_cycles.json"):
+    for name in ("audit_log.jsonl", "catalogue_index.json", "usage_cycles.json", "stripe_customer.json"):
         (app_settings.DATA_DIR / name).unlink(missing_ok=True)
     (app_settings.DATA_DIR / "products.json").write_text(fakes.catalogue_file_content(), encoding="utf-8")
     app_settings.SHELF_FILE.write_text(SHELF, encoding="utf-8")
@@ -81,22 +81,30 @@ def _fresh_files() -> None:
     config.save_policy(PolicyConfig())
 
 
+def _seed_kitchen_card() -> None:
+    """Every order charges Stripe; tests start with a Visa ····4242 already on file."""
+    payments._save_profile("cus_test_1", "pm_test_visa", "Visa", "4242")
+
+
 @pytest.fixture(autouse=True)
 def world(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """A clean gateway and a clean Stockpot wired together in memory, with fakes outside."""
     _fresh_files()
     valio, fake_llm, exa = fakes.FakeValio(), fakes.FakeLLM(), fakes.FakeExa()
+    stripe = fakes.FakeStripe()
     valio_client.use_transport(valio.transport())
     monkeypatch.setattr(catalogue, "MIN_PRODUCTS_FOR_VOCABULARY", 1)
     catalogue.load()
-    ledger.load(), merchant.reset(), supplier_log.reset(), keys.reset()
+    ledger.load(), merchant.reset(), supplier_log.reset(), keys.reset(), offer_store.reset()
 
     gateway_client.use_client(TestClient(gateway_app))
     monkeypatch.setattr(llm, "complete_json", fake_llm.complete_json)
     monkeypatch.setattr(llm, "complete_text", fake_llm.complete_text)
     monkeypatch.setattr(exa_checks, "_exa_search", exa.search)
+    payments.use_backend(stripe)
+    _seed_kitchen_card()
     exa_checks._cache.clear()
     pipeline._vocabulary_cache = None
     authority.forget()
     state.load()
-    return SimpleNamespace(valio=valio, llm=fake_llm, exa=exa, orders=ledger.all_orders)
+    return SimpleNamespace(valio=valio, llm=fake_llm, exa=exa, stripe=stripe, orders=ledger.all_orders)

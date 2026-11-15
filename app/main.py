@@ -8,18 +8,20 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import authority, camera, categories, config, intake, settings, state, vision
+from app import authority, camera, categories, config, intake, payments, settings, state, trust_tests, vision
 from app.gateway_client import GatewayError, GatewayRefused
 from app.models import PolicyConfig, SensorEvent
+from app.payments import PaymentError
 
 STATIC = Path(__file__).parent / "static"
 
@@ -32,6 +34,13 @@ class TypedRequest(BaseModel):
 class ApprovalAction(BaseModel):
     action: Literal["approve", "reject"]
     note: str = Field(default="", max_length=300)
+
+
+class ShelfReorderSettings(BaseModel):
+    """Per-item reorder controls editable from the inventory table."""
+
+    reorder_below: Decimal = Field(ge=0, description="Order when the camera sees this many units or fewer.")
+    reorder_quantity: Decimal = Field(gt=0, description="How many units to order when a reorder is triggered.")
 
 
 def _sign_standing_limits(reason: str) -> None:
@@ -49,7 +58,7 @@ def _sign_standing_limits(reason: str) -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     state.load()
-    _sign_standing_limits("Stockpot started.")
+    _sign_standing_limits("Ukko started.")
     intake.wire_vision_reorders()
     camera.start()
     vision.start()
@@ -79,7 +88,7 @@ class FreshStaticFiles(StaticFiles):
         return response
 
 
-app = FastAPI(title="Stockpot buying agent", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Ukko buying agent", version="0.1.0", lifespan=lifespan)
 # The sensor device and a phone on the local network both call this API.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.mount("/static", FreshStaticFiles(directory=STATIC), name="static")
@@ -87,8 +96,10 @@ app.mount("/static", FreshStaticFiles(directory=STATIC), name="static")
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    pay = payments.status()
     return {"status": "ok", "service": "stockpot", "gateway_url": settings.GATEWAY_URL,
             "gemini_key_set": bool(settings.GEMINI_API_KEY), "exa_key_set": bool(settings.EXA_API_KEY),
+            "stripe_configured": pay["configured"], "stripe_ready": pay["ready"],
             "camera_connected": camera.connected()}
 
 
@@ -117,6 +128,53 @@ def typed_request(body: TypedRequest, tasks: BackgroundTasks) -> dict[str, Any]:
     return {"request_id": record.id}
 
 
+def _enrich_shelf_for_dashboard(snapshot: dict[str, Any]) -> None:
+    """Attach live reorder-model fields each shelf row needs for the inventory table."""
+    from app import forecast
+    model = config.load_reorder_model()
+    snapshot["reorder_model"] = {
+        "model_day_seconds": model.model_day_seconds,
+        "alpha": model.alpha,
+        "sigma_factor": model.sigma_factor,
+        "z": model.z,
+        "default_cover_days": model.default_cover_days,
+        "default_lead_days": model.default_lead_days,
+        "multiplier_min": model.multiplier_min,
+        "multiplier_max": model.multiplier_max,
+        "extra_lead_days_min": model.extra_lead_days_min,
+        "extra_lead_days_max": model.extra_lead_days_max,
+        "demo_clock": model.model_day_seconds != 86400,
+        "demo_clock_label": (
+            f"Demo clock: 1 day = {max(1, int(round(model.model_day_seconds / 60)))} min"
+            if model.model_day_seconds != 86400 else None
+        ),
+    }
+    now = state.now()
+    for row in snapshot["shelf"]:
+        key = row["product_key"]
+        live = state.shelf.get(key)
+        if live is None:
+            continue
+        forecast.seed_usage(live, now)
+        view = forecast.evaluate_row(key, live, now=now, visible=live.quantity)
+        row.update({
+            "usage_per_day": view["usage_per_day"],
+            "usage_label": view["usage_label"],
+            "usage_observations": view["usage_observations"],
+            "days_of_cover": view["days_of_cover"],
+            "reorder_point": view["reorder_point"],
+            "on_hand_units": view["on_hand_units"],
+            "on_order_units": view["on_order_units"],
+            "inventory_position": view["inventory_position"],
+            "needs_reorder": view["needs_reorder"],
+            "model_order_quantity": view["order_quantity"],
+            "delivery_due": view["delivery_due"],
+            "units_per_visible_item": view["units_per_visible_item"],
+            "reorder_why": live.reorder_why or view["why"],
+            "quantity_why": view["quantity_why"],
+        })
+
+
 @app.get("/state")
 def get_state() -> dict[str, Any]:
     """Everything the dashboard shows, in one call."""
@@ -128,8 +186,49 @@ def get_state() -> dict[str, Any]:
             view["approval"] = {"url": f"{settings.public_base_url()}/approve/{token}"}
     snapshot["standing_limits"] = authority.summary()
     snapshot["category_names"] = categories.all_names()
+    snapshot["payment"] = payments.status()
     snapshot["health"] = health()
+    _enrich_shelf_for_dashboard(snapshot)
     return snapshot
+
+
+@app.post("/payments/setup")
+def start_payment_setup() -> dict[str, Any]:
+    """Start embedded Stripe Checkout (setup mode) for the kitchen card form."""
+    try:
+        session = payments.create_setup_session()
+        return {
+            "client_secret": session["client_secret"],
+            "session_id": session["session_id"],
+            "publishable_key": settings.STRIPE_PUBLISHABLE_KEY,
+        }
+    except PaymentError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+class PaymentComplete(BaseModel):
+    session_id: str = Field(min_length=1)
+
+
+@app.post("/payments/complete")
+def complete_payment_setup(body: PaymentComplete) -> dict[str, Any]:
+    """Save the card after the embedded Checkout finishes (no redirect)."""
+    try:
+        return {"payment": payments.finish_setup(body.session_id)}
+    except PaymentError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.get("/payments/return", include_in_schema=False)
+def payment_setup_return(session_id: str = "") -> RedirectResponse:
+    """Fallback when a payment method redirects away (for example 3-D Secure)."""
+    if not session_id:
+        return RedirectResponse("/?payment=missing", status_code=303)
+    try:
+        payments.finish_setup(session_id)
+    except PaymentError:
+        return RedirectResponse("/?payment=failed", status_code=303)
+    return RedirectResponse("/?payment=ready", status_code=303)
 
 
 def _decide(record: state.RequestRecord | None, body: ApprovalAction, tasks: BackgroundTasks, where: str) -> dict[str, Any]:
@@ -168,6 +267,19 @@ def approve_from_phone(token: str, body: ApprovalAction, tasks: BackgroundTasks)
     return _decide(state.by_token(token), body, tasks, "phone")
 
 
+class TrustTestRequest(BaseModel):
+    scenario: Literal["price_changed", "expired", "unknown_signer", "reused", "wrong_buyer"]
+
+
+@app.post("/trust-tests")
+def run_trust_test(body: TrustTestRequest) -> dict[str, Any]:
+    """Break a real signed offer in one way and run the same verifier the pipeline uses."""
+    try:
+        return trust_tests.run(body.scenario)
+    except (GatewayError, GatewayRefused, ValueError, RuntimeError) as error:
+        raise HTTPException(502, str(error)) from error
+
+
 @app.get("/policy")
 def get_policy() -> dict[str, Any]:
     return {"policy": state.policy.model_dump(mode="json"), "category_names": categories.all_names()}
@@ -186,6 +298,34 @@ def save_policy(policy: PolicyConfig) -> dict[str, Any]:
     changed = [f"{key}: {before[key]} -> {after[key]}" for key in after if before[key] != after[key]]
     _sign_standing_limits(f"Rules changed in the dashboard ({'; '.join(changed) or 'no values changed'}).")
     return {"policy": after}
+
+
+@app.put("/shelf/{product_key}")
+def save_shelf_reorder(product_key: str, body: ShelfReorderSettings) -> dict[str, Any]:
+    """Set when this inventory item reorders and how many units to order. Saved to camera_foods.yaml."""
+    with state.lock:
+        row = state.shelf.get(product_key)
+        if row is None:
+            raise HTTPException(404, f"Unknown inventory item '{product_key}'.")
+        try:
+            config.update_camera_food_reorder(
+                product_key, reorder_below=body.reorder_below, reorder_quantity=body.reorder_quantity,
+            )
+        except KeyError:
+            raise HTTPException(404, f"Unknown inventory item '{product_key}'.") from None
+        row.reorder_below = body.reorder_below
+        row.reorder_quantity = body.reorder_quantity
+        row.usual_quantity = body.reorder_quantity
+        # A new threshold may change whether the current count is already "low".
+        if row.quantity is not None:
+            row.level = vision.level_for(float(row.quantity), float(body.reorder_below))
+        view = row.model_dump(mode="json")
+    state.log(
+        None, "shelf",
+        f"Reorder settings for {view['name']}: order when ≤ {float(body.reorder_below):g} visible, "
+        f"order {float(body.reorder_quantity):g} {view.get('unit') or 'pcs'}.",
+    )
+    return {"shelf": view}
 
 
 @app.get("/", include_in_schema=False)
