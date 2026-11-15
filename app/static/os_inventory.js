@@ -87,9 +87,16 @@ function drawInventory(state) {
   const search = $("inventory-search").value.trim().toLowerCase();
   const status = $("inventory-status").value;
   // Always keep every watched food, including after order/reject, until the shelf reads full.
+  // A product clicked in the camera overlay is pinned to the top until the selection clears.
   const shown = state.shelf
     .filter((item) => item.name.toLowerCase().includes(search) && matchesInventoryStatus(state, item, status))
-    .sort((a, b) => STATUS_RANK[shelfStatus(state, a)] - STATUS_RANK[shelfStatus(state, b)]);
+    .sort((a, b) => {
+      if (selectedProductKey) {
+        if (a.product_key === selectedProductKey) return -1;
+        if (b.product_key === selectedProductKey) return 1;
+      }
+      return STATUS_RANK[shelfStatus(state, a)] - STATUS_RANK[shelfStatus(state, b)];
+    });
   put("inventory-body", shown.map((item) => {
     const display = shelfStatus(state, item);
     return `

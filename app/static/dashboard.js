@@ -268,6 +268,9 @@ function selectProduct(productKey) {
     selected = state.requests.find((request) => request.product_key === productKey && isOpen(request))?.id || selected;
   }
   draw();
+  if (!productKey) return;
+  const row = $("inventory-body")?.querySelector(`tr[data-product-key="${CSS.escape(productKey)}"]`);
+  row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 async function poll() {
