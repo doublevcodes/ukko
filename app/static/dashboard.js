@@ -306,6 +306,34 @@ $("camera-tabs").addEventListener("click", (event) => {
 $("camera-viewport").addEventListener("click", (event) => {
   if (state) selectProduct(event.target.closest(".hit")?.dataset.productKey || null);
 });
+
+$("reset-orders").addEventListener("click", async () => {
+  if (SAMPLE) return;
+  const confirmed = window.confirm(
+    "Clear all orders, requests and on-order stock, and start the shelf from scratch?\n\nThe kitchen card is kept.",
+  );
+  if (!confirmed) return;
+  const button = $("reset-orders");
+  const status = $("reset-orders-status");
+  button.disabled = true;
+  status.textContent = "Resetting…";
+  try {
+    await send("POST", "/reset", {});
+    selected = null;
+    selectedProductKey = null;
+    newest = null;
+    orderModalId = null;
+    folds.clear();
+    orderFolds.clear();
+    status.textContent = "Orders cleared.";
+    await poll();
+  } catch (error) {
+    status.textContent = error.message || "Reset failed.";
+  } finally {
+    button.disabled = false;
+    setTimeout(() => { if (status.textContent === "Orders cleared.") status.textContent = ""; }, 2500);
+  }
+});
 for (const id of ["inventory-search", "inventory-status"]) $(id).addEventListener("input", () => state && drawInventory(state));
 
 // Inventory reorder settings: save on blur or Enter; do not let a click steal the product selection.
