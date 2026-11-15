@@ -262,8 +262,10 @@ function draw() {
   }
   let showing = state.requests.find((request) => request.id === selected);
   if (!showing) selected = pickOpenRequest();
-  else if (!needsPerson(showing)) {
-    // A request elsewhere hit approval / clarification — surface it over working noise.
+  else if (showing.decision.status === "working") {
+    // Stay on an in-flight approve/order so it is not swapped for another pending approval.
+  } else if (!needsPerson(showing)) {
+    // A request elsewhere hit approval / clarification — surface it over finished noise.
     const waiting = state.requests.find(needsPerson);
     if (waiting) selected = waiting.id;
   }
@@ -381,7 +383,9 @@ $("request-form").addEventListener("submit", async (event) => {
 
 async function actOnApproval(requestId, action, note) {
   await send("POST", `/approvals/${requestId}`, { action, note });
-  if (selected === requestId) selected = null;  // ordered/rejected stay in Orders, not under Ask Ukko
+  // Keep this request selected through working → ordered/failed so another pending
+  // approval does not jump into the panel mid-flight.
+  selected = requestId;
   poll();
 }
 

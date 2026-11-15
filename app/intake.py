@@ -192,7 +192,13 @@ def run_approved(record: RequestRecord, note: str, where: str) -> None:
     """A person approved: their key signs this exact order, after a fresh re-check."""
     said = f" Note: {note}" if note else ""
     state.log(record.id, "approval", f"A person approved the plan from the {where}.{said}")
-    _guarded(record, lambda: pipeline.act(record, approved_by_person=True))
+    approved_plan = record.decision.chosen_plan
+    _guarded(
+        record,
+        lambda: pipeline.act(
+            record, approved_by_person=True, approved_plan=approved_plan,
+        ),
+    )
 
 
 def reject(record: RequestRecord, note: str, where: str) -> None:

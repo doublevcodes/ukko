@@ -237,7 +237,30 @@ def _wait_for_person(record: RequestRecord) -> None:
     state.log(record.id, "approval", "Waiting for a person to approve or reject.")
 
 
-def _replan(record: RequestRecord, change: str) -> None:
+def _plan_lines(plan: Plan) -> list[tuple[str, int]]:
+    return [(line.offer.product_id, line.quantity) for line in plan.lines]
+
+
+def _plan_needs_reapproval(approved: Plan | None, current: Plan) -> bool:
+    """True when the live plan is no longer what the person signed off on.
+
+    Fresh offers with the same products/qty and a total that did not rise keep the
+    prior approval (so an expired JWT refresh does not bounce back to the person).
+    """
+    if approved is None:
+        return True
+    if _plan_lines(approved) != _plan_lines(current):
+        return True
+    return current.total > approved.total
+
+
+def _replan(
+    record: RequestRecord,
+    change: str,
+    *,
+    approved_by_person: bool = False,
+    approved_plan: Plan | None = None,
+) -> None:
     """Exception 4: something moved between the decision and the order."""
     record.replans += 1
     state.log(record.id, "recheck", f"Re-check just before ordering: {change} No order was placed; planning again with fresh offers.")
@@ -249,22 +272,36 @@ def _replan(record: RequestRecord, change: str) -> None:
     except (GatewayError, GatewayRefused) as error:
         fail(record, "recheck", f"The supplier could not answer. {error}")
         return
-    decide(record)
+    decide(record, approved_by_person=approved_by_person, approved_plan=approved_plan)
 
 
-def act(record: RequestRecord, approved_by_person: bool = False) -> None:
+def act(
+    record: RequestRecord,
+    approved_by_person: bool = False,
+    approved_plan: Plan | None = None,
+) -> None:
     """Step 7: order, ask a person, or stop. Ordering always starts with a live re-check."""
     decision = record.decision
     if decision.policy_result.outcome == "deny":
         decision.status, decision.message = "rejected", f"Stopped by the rules. {NOTHING_ORDERED}"
         state.log(record.id, "order", decision.message)
         return
-    if decision.policy_result.outcome == "needs_approval" and not approved_by_person:
-        return _wait_for_person(record)
+    if decision.policy_result.outcome == "needs_approval":
+        # A person just approved this plan (approved_plan is still None). Only ask again
+        # after a replan when the live cart is no longer what they signed off on.
+        if not approved_by_person:
+            return _wait_for_person(record)
+        if approved_plan is not None and _plan_needs_reapproval(approved_plan, decision.chosen_plan):
+            return _wait_for_person(record)
     try:
         confirmation = ordering.place(record.request, decision.chosen_plan, state.policy, approved_by_person)
     except ordering.Replan as change:
-        return _replan(record, str(change))
+        # Keep the plan the person already approved across a refresh / price-check replan.
+        snapshot = approved_plan or (decision.chosen_plan if approved_by_person else None)
+        return _replan(
+            record, str(change),
+            approved_by_person=approved_by_person, approved_plan=snapshot,
+        )
     except ordering.TrustBlocked as blocked:
         decision.policy_result = PolicyResult(outcome="deny", reasons=[str(blocked)])
         decision.status, decision.message = "rejected", f"Stopped by trust checks. {NOTHING_ORDERED}"
@@ -318,7 +355,12 @@ def finalise(record: RequestRecord) -> None:
         state.shelf[record.product_key].armed = True
 
 
-def decide(record: RequestRecord) -> None:
+def decide(
+    record: RequestRecord,
+    *,
+    approved_by_person: bool = False,
+    approved_plan: Plan | None = None,
+) -> None:
     """Steps 3 to 7. Also run again after a re-check finds a change."""
     plans = build_plans(record)
     if plans is None:
@@ -326,4 +368,4 @@ def decide(record: RequestRecord) -> None:
     remaining, findings, removed = web_checks(record, plans.plans)
     choose_and_explain(record, remaining, findings, removed)
     policy_check(record)
-    act(record)
+    act(record, approved_by_person=approved_by_person, approved_plan=approved_plan)
