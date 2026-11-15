@@ -55,11 +55,14 @@
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           </div>
           <div class="camera-actions">
-            <button type="button" class="quiet" id="reset-orders"
+            <div class="camera-actions-copy">
+              <span class="camera-actions-label">Use this to start the demo</span>
+              <span class="small muted" id="reset-orders-status" aria-live="polite"></span>
+            </div>
+            <button type="button" class="primary" id="reset-orders"
               title="Clear requests, shelf history and on-order stock. The kitchen card is kept.">
               Reset orders
             </button>
-            <span class="small muted" id="reset-orders-status" aria-live="polite"></span>
           </div>
         </section>
       </div>
