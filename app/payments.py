@@ -8,6 +8,7 @@ use PaymentIntent off-session with the saved PaymentMethod.
 from __future__ import annotations
 
 import json
+import time
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Protocol
@@ -47,20 +48,33 @@ class StripeBackend:
 
     def create_customer(self, name: str) -> str:
         self._api()
-        return stripe.Customer.create(name=name, metadata={"buyer_id": settings.BUYER_ID}).id
+        try:
+            return stripe.Customer.create(name=name, metadata={"buyer_id": settings.BUYER_ID}).id
+        except stripe.error.StripeError as error:
+            raise PaymentError(f"Stripe could not create a customer ({error.user_message or type(error).__name__}).") from error
 
     def create_embedded_setup(self, customer_id: str, return_url: str) -> dict[str, str]:
         self._api()
         # Omit payment_method_types so Stripe can pick methods from the Dashboard.
         # redirect_on_completion=if_required keeps card setup inside the dialog.
-        session = stripe.checkout.Session.create(
-            mode="setup",
-            ui_mode="embedded_page",
-            customer=customer_id,
-            currency="eur",
-            return_url=return_url,
-            redirect_on_completion="if_required",
-        )
+        try:
+            session = stripe.checkout.Session.create(
+                mode="setup",
+                ui_mode="embedded_page",
+                customer=customer_id,
+                currency="eur",
+                return_url=return_url,
+                redirect_on_completion="if_required",
+            )
+        except stripe.error.InvalidRequestError as error:
+            # Stale customer id in the saved profile (common after switching Stripe accounts
+            # or restoring Blob state onto a different key) — signal the caller to reset.
+            message = (error.user_message or str(error) or "").lower()
+            if "no such customer" in message or error.code in {"resource_missing"}:
+                raise PaymentError("stale_customer") from error
+            raise PaymentError(f"Stripe could not start card setup ({error.user_message or error.code}).") from error
+        except stripe.error.StripeError as error:
+            raise PaymentError(f"Stripe could not start card setup ({error.user_message or type(error).__name__}).") from error
         if not session.client_secret:
             raise PaymentError("Stripe did not return a client secret for the setup form.")
         return {"client_secret": session.client_secret, "session_id": session.id}
@@ -68,26 +82,49 @@ class StripeBackend:
     def setup_payment_method(self, session_id: str) -> tuple[str, str, dict[str, Any]]:
         self._api()
         try:
-            session = stripe.checkout.Session.retrieve(session_id, expand=["setup_intent"])
+            session = stripe.checkout.Session.retrieve(
+                session_id, expand=["setup_intent", "setup_intent.payment_method"],
+            )
         except stripe.error.InvalidRequestError as error:
             raise PaymentError(f"Stripe could not find that Checkout session ({error.user_message or error.code}).") from error
-        if session.mode != "setup" or session.status != "complete":
+        except stripe.error.StripeError as error:
+            raise PaymentError(f"Stripe could not load the card setup ({error.user_message or type(error).__name__}).") from error
+        if session.mode != "setup":
+            raise PaymentError("Card setup was not completed. Open Add card and try again.")
+        if session.status != "complete":
+            # Caller may retry briefly: embedded Checkout onComplete can fire before status flips.
             raise PaymentError("Card setup was not completed. Open Add card and try again.")
         setup = session.setup_intent
         if isinstance(setup, str) or setup is None:
             raise PaymentError("Stripe did not return a setup for this session.")
-        payment_method_id = setup.payment_method if isinstance(setup.payment_method, str) else setup.payment_method.id
+        raw_pm = setup.payment_method
+        if raw_pm is None:
+            raise PaymentError("Stripe did not return a payment method for this session.")
+        payment_method_id = raw_pm if isinstance(raw_pm, str) else raw_pm.id
+        if session.customer is None:
+            raise PaymentError("Stripe did not return a customer for this session.")
         customer_id = session.customer if isinstance(session.customer, str) else session.customer.id
-        method = stripe.PaymentMethod.retrieve(payment_method_id)
-        # Stripe SDK objects are not plain dicts — read attributes, not .get().
-        card = method.card
-        brand = (getattr(card, "brand", None) or "card")
-        last4 = getattr(card, "last4", None) or "????"
+        try:
+            method = raw_pm if not isinstance(raw_pm, str) else stripe.PaymentMethod.retrieve(payment_method_id)
+        except stripe.error.StripeError as error:
+            raise PaymentError(f"Stripe could not read the saved card ({error.user_message or type(error).__name__}).") from error
+        # Stripe SDK Card objects are not dicts — never call .get() on them.
+        card = getattr(method, "card", None)
+        if card is not None and hasattr(card, "to_dict"):
+            card_data = card.to_dict()
+            brand = card_data.get("brand") or "card"
+            last4 = card_data.get("last4") or "????"
+        else:
+            brand = getattr(card, "brand", None) or "card"
+            last4 = getattr(card, "last4", None) or "????"
         return customer_id, payment_method_id, {"brand": str(brand).title(), "last4": str(last4)}
 
     def set_default_payment_method(self, customer_id: str, payment_method_id: str) -> None:
         self._api()
-        stripe.Customer.modify(customer_id, invoice_settings={"default_payment_method": payment_method_id})
+        try:
+            stripe.Customer.modify(customer_id, invoice_settings={"default_payment_method": payment_method_id})
+        except stripe.error.StripeError as error:
+            raise PaymentError(f"Stripe could not save the card as default ({error.user_message or type(error).__name__}).") from error
 
     def charge(self, customer_id: str, payment_method_id: str, amount_cents: int,
                currency: str, request_id: str, description: str) -> str:
@@ -198,8 +235,16 @@ def status() -> dict[str, Any]:
 
 def _ensure_customer() -> str:
     stored = _read_file()
-    if stored:
+    if stored and stored.get("customer_id"):
         return stored["customer_id"]
+    customer_id = _live().create_customer("Ukko demo kitchen")
+    _save_profile(customer_id, "", "", "")
+    return customer_id
+
+
+def _reset_customer() -> str:
+    """Forget a stale Stripe customer id and create a fresh one for this secret key."""
+    clear_profile()
     customer_id = _live().create_customer("Ukko demo kitchen")
     _save_profile(customer_id, "", "", "")
     return customer_id
@@ -212,12 +257,16 @@ def create_setup_session() -> dict[str, str]:
         raise PaymentError("Stripe is not configured. Set STRIPE_SECRET_KEY (test mode) in .env.")
     if not settings.STRIPE_PUBLISHABLE_KEY:
         raise PaymentError("Stripe publishable key is missing. Set STRIPE_PUBLISHABLE_KEY in .env.")
-    customer_id = _ensure_customer()
     base = settings.public_base_url()
-    return backend.create_embedded_setup(
-        customer_id,
-        return_url=f"{base}/payments/return?session_id={{CHECKOUT_SESSION_ID}}",
-    )
+    return_url = f"{base}/payments/return?session_id={{CHECKOUT_SESSION_ID}}"
+    customer_id = _ensure_customer()
+    try:
+        return backend.create_embedded_setup(customer_id, return_url=return_url)
+    except PaymentError as error:
+        if str(error) != "stale_customer":
+            raise
+        customer_id = _reset_customer()
+        return backend.create_embedded_setup(customer_id, return_url=return_url)
 
 
 def finish_setup(session_id: str) -> dict[str, Any]:
@@ -225,7 +274,19 @@ def finish_setup(session_id: str) -> dict[str, Any]:
     backend = _live()
     if not backend.configured():
         raise PaymentError("Stripe is not configured.")
-    customer_id, payment_method_id, card = backend.setup_payment_method(session_id)
+    # Embedded Checkout's onComplete can fire a moment before session.status is complete.
+    last_error: PaymentError | None = None
+    for attempt in range(6):
+        try:
+            customer_id, payment_method_id, card = backend.setup_payment_method(session_id)
+            break
+        except PaymentError as error:
+            last_error = error
+            if "not completed" not in str(error).lower() or attempt == 5:
+                raise
+            time.sleep(0.4)
+    else:
+        raise last_error or PaymentError("Card setup was not completed. Open Add card and try again.")
     backend.set_default_payment_method(customer_id, payment_method_id)
     _save_profile(customer_id, payment_method_id, card["brand"], card["last4"])
     return status()

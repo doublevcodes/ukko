@@ -18,11 +18,15 @@ const folds = new Map();  // which fold-out sections of the decision the reader 
 const orderFolds = new Map();  // fold-outs inside the Orders details modal
 
 async function send(method, path, body) {
-  const response = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
   const answer = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = answer.detail;
-    let message = "The request was not accepted.";
+    let message = `The request was not accepted (${response.status}).`;
     if (typeof detail === "string") message = detail;
     else if (Array.isArray(detail) && detail[0]?.msg) message = detail.map((item) => item.msg).join(" ");
     throw new Error(message);
@@ -80,16 +84,26 @@ async function destroyEmbeddedCheckout() {
 async function finishEmbeddedSetup() {
   const error = $("payment-error");
   if (!setupSessionId) return;
-  try {
-    const answer = await send("POST", "/payments/complete", { session_id: setupSessionId });
-    state.payment = answer.payment;
-    await destroyEmbeddedCheckout();
-    drawPayment();
-    drawHeader();
-    trouble = "";
-  } catch (err) {
-    error.textContent = err.message;
+  const sessionId = setupSessionId;
+  // Retry a few times: Stripe may still be flipping the session to complete.
+  let lastError = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const answer = await send("POST", "/payments/complete", { session_id: sessionId });
+      state.payment = answer.payment;
+      await destroyEmbeddedCheckout();
+      drawPayment();
+      drawHeader();
+      trouble = "";
+      return;
+    } catch (err) {
+      lastError = err;
+      const msg = String(err.message || "");
+      if (!/not completed/i.test(msg) || attempt === 5) break;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
   }
+  error.textContent = lastError?.message || "Card setup failed.";
 }
 
 async function mountEmbeddedCheckout() {

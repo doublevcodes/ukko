@@ -106,7 +106,9 @@ def health() -> dict[str, Any]:
 @app.get("/camera/feed", include_in_schema=False)
 def camera_feed() -> StreamingResponse:
     """The shelf camera's video for the dashboard, relayed from Ukko's one connection to the camera."""
-    if not camera.connected():
+    # Allow a remount during a short stall: we still have the last picture even when
+    # connected() is false (no fresh frame for a few seconds).
+    if not camera.has_frame():
         raise HTTPException(503, "The camera is not sending video.")
     return StreamingResponse(camera.relay(), media_type=f"multipart/x-mixed-replace; boundary={camera.BOUNDARY}",
                              headers={"Cache-Control": "no-store"})
@@ -179,6 +181,10 @@ def _enrich_shelf_for_dashboard(snapshot: dict[str, Any]) -> None:
 def get_state() -> dict[str, Any]:
     """Everything the dashboard shows, in one call."""
     vision.note_viewer()
+    # After a Vercel cold start the standing limits may still be missing if buyer
+    # registration raced with Blob restore. Retry here so the dashboard heals.
+    if authority.summary() is None:
+        _sign_standing_limits("Reconnecting to the supplier.")
     snapshot = state.snapshot()
     for view in snapshot["requests"]:
         token = state.requests[view["id"]].approval_token if view["id"] in state.requests else None
@@ -204,6 +210,8 @@ def start_payment_setup() -> dict[str, Any]:
         }
     except PaymentError as error:
         raise HTTPException(400, str(error)) from error
+    except Exception as error:  # noqa: BLE001  never return a blank 500 to the card dialog
+        raise HTTPException(400, f"Card setup failed: {type(error).__name__}: {error}") from error
 
 
 class PaymentComplete(BaseModel):
@@ -217,6 +225,8 @@ def complete_payment_setup(body: PaymentComplete) -> dict[str, Any]:
         return {"payment": payments.finish_setup(body.session_id)}
     except PaymentError as error:
         raise HTTPException(400, str(error)) from error
+    except Exception as error:  # noqa: BLE001  never return a blank 500 to the card dialog
+        raise HTTPException(400, f"Could not save the card: {type(error).__name__}: {error}") from error
 
 
 @app.get("/payments/return", include_in_schema=False)

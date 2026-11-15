@@ -3,17 +3,35 @@
 // (`detections`): the vision loop on the laptop asks Gemini where each watched product stands.
 
 const EMPTY_VIEWPORT = `<div class="viewport-empty"><b>Camera feed not connected yet</b><span>This space is reserved for the live shelf view.</span></div>`;
+// Keep the last decoded frame through short upstream blips (Cloudflare / Wi-Fi) instead of
+// flashing the empty viewport every time health.camera_connected flickers false.
+const FEED_HOLD_MS = 20000;
 let camera = 0;            // which camera tab is showing
 let mountedFeed = null;    // the feed address now in the slot, so the MJPEG stream is not reconnected on every poll
+let feedHeldSince = null;  // when health first said disconnected while a feed was still on screen
 let shownDetections = [];  // the boxes last drawn, to place them again once the picture's size is known
 
 function drawCamera(state) {
   const chosen = BASELINE.cameras[camera];
   put("camera-tabs", BASELINE.cameras.map((entry, index) =>
     `<button class="tab ${index === camera ? "on" : ""}" data-camera="${index}">${esc(entry.label)}</button>`).join(""));
-  const connected = Boolean(chosen.feedUrl && (state.health || {}).camera_connected);
-  $("camera-live").classList.toggle("on", connected);
-  mountFeed(connected ? chosen.feedUrl : null);
+  const live = Boolean(chosen.feedUrl && (state.health || {}).camera_connected);
+  $("camera-live").classList.toggle("on", live);
+  if (!chosen.feedUrl) {
+    feedHeldSince = null;
+    mountFeed(null);
+  } else if (live) {
+    feedHeldSince = null;
+    mountFeed(chosen.feedUrl);
+  } else if (mountedFeed) {
+    if (feedHeldSince == null) feedHeldSince = Date.now();
+    if (Date.now() - feedHeldSince >= FEED_HOLD_MS) {
+      feedHeldSince = null;
+      mountFeed(null);
+    }
+  } else {
+    mountFeed(null);
+  }
   drawOverlay(chosen.watchesShelf ? state.detections || [] : []);
 }
 
@@ -28,8 +46,9 @@ function mountFeed(feedUrl) {
   // Size the boxes from the first decoded frame only. MJPEG can fire load on every
   // picture; redrawing the overlay that often stalls the browser and freezes the feed.
   picture.addEventListener("load", () => drawOverlay(shownDetections), { once: true });
-  // If the feed drops, clear the mount so the next poll opens a new stream.
-  picture.onerror = () => { mountedFeed = null; slot.innerHTML = EMPTY_VIEWPORT; };
+  // Stream died: allow a remount on the next live poll, but leave the last frame on screen
+  // so a brief blip does not flash the empty viewport.
+  picture.onerror = () => { mountedFeed = null; };
   // Cache-bust so a remount after an error does not reuse a dead browser connection.
   picture.src = `${feedUrl}${feedUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
   slot.replaceChildren(picture);

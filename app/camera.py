@@ -75,6 +75,18 @@ def latest_frame() -> bytes | None:
     return newest()[0]
 
 
+def has_frame() -> bool:
+    """True once any picture has arrived, even if the stream is briefly stalled."""
+    with _lock:
+        return _frame is not None
+
+
+def last_frame() -> tuple[bytes | None, int]:
+    """The most recent picture even if it is older than FRESH_SECONDS (for remounts during a blip)."""
+    with _lock:
+        return _frame, _count
+
+
 def connected() -> bool:
     return latest_frame() is not None
 
@@ -150,10 +162,13 @@ async def relay() -> AsyncIterator[bytes]:
     Stays open across brief camera gaps. Ending the stream made the dashboard freeze on
     the last frame: the browser kept the <img>, Ukko still reported connected, and
     nothing remounted the feed when pictures returned.
+
+    On open, the last picture is sent even if it is briefly stale, so a remount during a
+    blip still shows something instead of a blank wait for the next fresh frame.
     """
     sent = 0
     while not _stopping:
-        frame, count = newest()
+        frame, count = last_frame() if sent == 0 else newest()
         if frame is None or count == sent:
             await asyncio.sleep(0.03)
             continue

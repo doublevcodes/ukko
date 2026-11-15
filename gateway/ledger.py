@@ -60,14 +60,13 @@ def register_buyer(buyer_id: str, public_jwk: dict[str, Any]) -> bool:
         raise ValueError("Send only the public key, never the private part.")
     with _lock:
         known = _buyers.get(buyer_id)
-        if known is not None and known != public_jwk:
-            raise ValueError(
-                f"Buyer '{buyer_id}' is already registered with a different key. "
-                f"To start over, stop the gateway and delete {_buyers_file()}."
-            )
+        # Same buyer + same key: idempotent. Same buyer + new key: update.
+        # The demo runs on ephemeral /tmp with Blob restore; a cold start can
+        # mint a fresh manager key while buyers.json still has an older one.
+        # Refusing forever left the dashboard stuck on "Supplier not connected".
         _buyers[buyer_id] = public_jwk
-        _buyers_file().parent.mkdir(parents=True, exist_ok=True)
         path = _buyers_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(_buyers, indent=2), encoding="utf-8")
         try:
             from app import durable

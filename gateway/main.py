@@ -159,6 +159,8 @@ def register_buyer(body: BuyerRegistration, x_agent_id: AgentId = None) -> dict[
         raise HTTPException(409, str(error)) from error
     if new:
         supplier_log.record("buyer_registered", x_agent_id, f"Buyer '{body.buyer_id}' registered an approval key.")
+    else:
+        supplier_log.record("buyer_registered", x_agent_id, f"Buyer '{body.buyer_id}' refreshed their approval key.")
     return {"buyer_id": body.buyer_id, "registered": True}
 
 

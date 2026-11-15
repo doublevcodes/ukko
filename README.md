@@ -2,6 +2,17 @@
 
 A stock-watching buying agent for professional kitchens (Junction 2026).
 
+## Public URLs
+
+| What | URL |
+|---|---|
+| **Dashboard (production)** | https://ukko-delta.vercel.app |
+| **Same deploy (alias)** | https://stockpot-delta.vercel.app |
+| **Supplier gateway** | https://ukko-delta.vercel.app/gateway |
+| **Gateway API docs** | https://ukko-delta.vercel.app/gateway/docs |
+
+Locally (see [Run](#run)): dashboard http://localhost:8000 · gateway http://localhost:8001 · MCP http://127.0.0.1:8002/mcp
+
 A camera notices a shelf product running low. Ukko looks the product up at the wholesaler (Valio Aimo), compares
 options, runs live web checks, and then either orders on its own or asks a person, following clear rules. Every step
 is logged in plain language. A person can also type a request, such as "20 kg of butter by Friday, organic if possible".
