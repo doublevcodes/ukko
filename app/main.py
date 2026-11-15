@@ -103,6 +103,13 @@ def health() -> dict[str, Any]:
             "camera_connected": camera.connected()}
 
 
+@app.post("/reset")
+def reset_runtime() -> dict[str, Any]:
+    """Clear requests, shelf live fields, audit and on-order; keep Stripe card and keys."""
+    state.reset_runtime()
+    return {"ok": True, "requests": 0, "message": "Runtime state cleared."}
+
+
 @app.get("/camera/feed", include_in_schema=False)
 def camera_feed() -> StreamingResponse:
     """The shelf camera's video for the dashboard, relayed from Ukko's one connection to the camera."""

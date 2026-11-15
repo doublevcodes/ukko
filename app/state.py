@@ -219,6 +219,12 @@ def load() -> None:
     with reorder fields filled from that file plus shelf.yaml defaults. If a
     previous run left live_state.json (or Blob restored it), that snapshot wins.
     """
+    _seed_from_config()
+    _restore_live_state()
+
+
+def _seed_from_config() -> None:
+    """Fresh shelf/requests/audit from yaml — no live_state overlay."""
     global policy
     defaults = config.load_shelf_defaults()
     with lock:
@@ -243,7 +249,35 @@ def load() -> None:
                 max_stock_units=fields["max_stock_units"],  # type: ignore[arg-type]
                 shelf_life_days=fields["shelf_life_days"],  # type: ignore[arg-type]
             )
-    _restore_live_state()
+
+
+def reset_runtime() -> None:
+    """Wipe requests, shelf live fields, audit and usage history; keep card and keys."""
+    from app import forecast
+
+    _seed_from_config()
+    settings.AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    settings.AUDIT_LOG.write_text("", encoding="utf-8")
+    forecast.USAGE_FILE.write_text("{}\n", encoding="utf-8")
+    orders = settings.DATA_DIR / "gateway" / "orders.jsonl"
+    if orders.parent.exists():
+        orders.write_text("", encoding="utf-8")
+    supplier = settings.DATA_DIR / "gateway" / "supplier_log.jsonl"
+    if supplier.parent.exists():
+        supplier.write_text("", encoding="utf-8")
+    try:
+        from gateway import merchant, supplier_log
+
+        merchant.reset()
+        supplier_log.reset()
+    except Exception:  # noqa: BLE001  gateway may not be imported in every process
+        pass
+    save()
+    durable.mirror(forecast.USAGE_FILE)
+    durable.mirror(orders)
+    if supplier.parent.exists():
+        durable.mirror(supplier)
+    log(None, "system", "Runtime state was reset: requests, shelf, audit and on-order cleared.")
 
 
 def set_detections(found: list[Detection]) -> None:

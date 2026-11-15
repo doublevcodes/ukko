@@ -247,6 +247,8 @@ def _load_cycles() -> dict[str, list[Cycle]]:
     if not USAGE_FILE.exists():
         return {}
     raw = json.loads(USAGE_FILE.read_text(encoding="utf-8") or "{}")
+    if not isinstance(raw, dict):
+        return {}
     return {key: [Cycle(**cycle) for cycle in cycles] for key, cycles in raw.items()}
 
 
