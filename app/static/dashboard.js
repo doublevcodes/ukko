@@ -269,6 +269,12 @@ function draw() {
     const waiting = state.requests.find(needsPerson);
     if (waiting) selected = waiting.id;
   }
+  // When every shelf item is stocked or already ordered, drop a finished decision so the
+  // typed Ask Ukko box is visible again.
+  if (shelfSettled(state)) {
+    showing = state.requests.find((request) => request.id === selected);
+    if (!showing || !isOpen(showing)) selected = null;
+  }
   drawHeader(); drawMode(); drawDecision();
   drawReplenishment(state); drawCamera(state);
   drawInventory(state); drawOrders(state); drawActivity(state);

@@ -70,6 +70,13 @@ function waitReason(state, item) {
 // The class for a product's tile, camera reading and inventory row: "selected" once it was clicked in the video.
 const picked = (item) => (item.product_key === selectedProductKey ? "selected" : "");
 
+// True when nothing on the shelf still needs a live reorder (stocked, or already ordered/rejected).
+function shelfSettled(state) {
+  return !(state.shelf || []).some((item) => (
+    (item.level === "low" || item.level === "empty") && !handledStatus(state, item)
+  ));
+}
+
 // Only low/critical items that still need attention (hide once ordered or rejected).
 function drawReplenishment(state) {
   const needed = state.shelf.filter((item) => (
