@@ -1,10 +1,13 @@
 """Live state in memory, plus the append-only audit log on disk.
 
-Restarting Ukko clears the live state. The audit file is kept.
+On a normal laptop restart, requests are cleared and the audit file is kept.
+On Vercel, live_state.json (and the audit file) are also mirrored to Blob so a
+cold start after a camera blip does not wipe the kitchen card or order history.
 """
 
 from __future__ import annotations
 
+import json
 import secrets
 import threading
 from collections import deque
@@ -14,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from app import config, settings
+from app import config, durable, settings
 from app.models import AuditEntry, Decision, Level, Offer, OrderRequest, PolicyConfig, Unit
 
 OPEN_STATUSES = {"working", "needs_clarification", "awaiting_approval"}
@@ -126,11 +129,95 @@ def now() -> datetime:
     return datetime.now(settings.HELSINKI).replace(microsecond=0)
 
 
+def _live_state_path():
+    return settings.DATA_DIR / "live_state.json"
+
+
+def save() -> None:
+    """Write requests, shelf and recent audit to disk (and Blob on Vercel)."""
+    with lock:
+        payload = {
+            "version": 1,
+            "policy": policy.model_dump(mode="json"),
+            "requests": [record.model_dump(mode="json") for record in requests.values()],
+            "shelf": {key: level.model_dump(mode="json") for key, level in shelf.items()},
+            "audit": [entry.model_dump(mode="json") for entry in audit],
+        }
+    path = _live_state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    durable.mirror(path)
+    if settings.AUDIT_LOG.exists():
+        durable.mirror(settings.AUDIT_LOG)
+
+
+def _restore_live_state() -> None:
+    """Reload requests/shelf/audit from live_state.json when present (after a cold start)."""
+    global policy
+    path = _live_state_path()
+    if not path.exists():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(payload, dict):
+        return
+    with lock:
+        if payload.get("policy"):
+            try:
+                policy = PolicyConfig(**payload["policy"])
+            except Exception:  # noqa: BLE001
+                pass
+        requests.clear()
+        for raw in payload.get("requests") or []:
+            try:
+                record = RequestRecord(**raw)
+                requests[record.id] = record
+            except Exception:  # noqa: BLE001
+                continue
+        for key, raw in (payload.get("shelf") or {}).items():
+            if key not in shelf:
+                continue
+            try:
+                restored = ShelfLevel(**raw)
+            except Exception:  # noqa: BLE001
+                continue
+            # Keep yaml-driven catalogue fields; restore the live sensor/order bits.
+            current = shelf[key]
+            current.level = restored.level
+            current.confidence = restored.confidence
+            current.updated_at = restored.updated_at
+            current.device_id = restored.device_id
+            current.quantity = restored.quantity
+            current.armed = restored.armed
+            current.low_streak = restored.low_streak
+            current.recent_counts = restored.recent_counts
+            current.full_since = restored.full_since
+            current.full_count = restored.full_count
+            current.usage_rate_d = restored.usage_rate_d
+            current.usage_updated_at = restored.usage_updated_at
+            current.usage_observations = restored.usage_observations
+            current.on_order_units = restored.on_order_units
+            current.on_order_since = restored.on_order_since
+            current.on_order_lead_days = restored.on_order_lead_days
+            current.reorder_why = restored.reorder_why
+            current.reorder_below = restored.reorder_below or current.reorder_below
+            current.reorder_quantity = restored.reorder_quantity or current.reorder_quantity
+        audit.clear()
+        for raw in payload.get("audit") or []:
+            try:
+                audit.append(AuditEntry(**raw))
+            except Exception:  # noqa: BLE001
+                continue
+
+
 def load() -> None:
     """Read the config files and start with an empty list of requests.
 
     Shelf rows are seeded from the camera encounter list (config/camera_foods.yaml),
-    with reorder fields filled from that file plus shelf.yaml defaults.
+    with reorder fields filled from that file plus shelf.yaml defaults. If a
+    previous run left live_state.json (or Blob restored it), that snapshot wins.
     """
     global policy
     defaults = config.load_shelf_defaults()
@@ -156,6 +243,7 @@ def load() -> None:
                 max_stock_units=fields["max_stock_units"],  # type: ignore[arg-type]
                 shelf_life_days=fields["shelf_life_days"],  # type: ignore[arg-type]
             )
+    _restore_live_state()
 
 
 def set_detections(found: list[Detection]) -> None:
@@ -174,6 +262,7 @@ def log(request_id: str | None, step: str, summary: str, **details: Any) -> Audi
         settings.AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
         with settings.AUDIT_LOG.open("a", encoding="utf-8") as file:
             file.write(entry.model_dump_json() + "\n")
+    save()
     return entry
 
 
@@ -183,6 +272,7 @@ def new_request(source: Literal["sensor", "typed"], title: str, product_key: str
                            decision=Decision(request_id=request_id))
     with lock:
         requests[request_id] = record
+    save()
     return record
 
 

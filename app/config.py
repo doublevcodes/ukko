@@ -136,6 +136,9 @@ def save_policy(policy: PolicyConfig) -> None:
     values = {key: plain(value) for key, value in policy.model_dump().items()}
     text = POLICY_HEADER + yaml.safe_dump(values, sort_keys=False, allow_unicode=True)
     settings.POLICY_FILE.write_text(text, encoding="utf-8")
+    from app import durable
+
+    durable.mirror(settings.POLICY_FILE)
 
 
 def _shelf_file() -> dict:

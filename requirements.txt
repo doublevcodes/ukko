@@ -26,6 +26,9 @@ segno
 # Sensor helper (sensor/send_event.py depends only on this)
 requests
 
+# Durable demo state on Vercel (kitchen card, keys, order history)
+vercel-blob>=0.5.0
+
 # AP2 (Agent Payments Protocol) Python SDK. Not on PyPI yet, so it is pinned
 # to an exact commit of the official repository.
 ap2 @ git+https://github.com/google-agentic-commerce/AP2.git@e1ea56db72a6385bce3e5c1112b3a56ce60acb43

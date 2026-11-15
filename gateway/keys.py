@@ -32,6 +32,12 @@ def load_or_create(path: Path, key_id: str) -> JWK:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(key.export(), encoding="utf-8")
     path.chmod(0o600)  # private key: readable by the owner only
+    try:
+        from app import durable
+
+        durable.mirror(path)
+    except Exception:  # noqa: BLE001
+        pass
     return key
 
 

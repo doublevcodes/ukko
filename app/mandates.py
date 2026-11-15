@@ -60,10 +60,13 @@ def load_or_create_key(path: Path, key_id: str) -> JWK:
     """Load a P-256 signing key from disk, creating it on first use."""
     if path.exists():
         return JWK(**json.loads(path.read_text(encoding="utf-8")))
+    from app import durable
+
     key = JWK.generate(kty="EC", crv="P-256", kid=key_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(key.export(), encoding="utf-8")
     path.chmod(0o600)  # private key: readable by the owner only
+    durable.mirror(path)
     return key
 
 

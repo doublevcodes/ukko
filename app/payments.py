@@ -155,6 +155,8 @@ def _ready_profile() -> dict[str, Any] | None:
 
 
 def _save_profile(customer_id: str, payment_method_id: str, brand: str, last4: str) -> None:
+    from app import durable
+
     settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": PROFILE_VERSION,
@@ -163,7 +165,9 @@ def _save_profile(customer_id: str, payment_method_id: str, brand: str, last4: s
         "brand": brand,
         "last4": last4,
     }
-    _profile_path().write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    path = _profile_path()
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    durable.mirror(path)
 
 
 def clear_profile() -> None:

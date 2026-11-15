@@ -22,6 +22,17 @@ def _prepare_runtime() -> None:
 
     data = Path(os.environ.get("UKKO_DATA_DIR") or "/tmp/ukko-data")
     data.mkdir(parents=True, exist_ok=True)
+    os.environ["UKKO_DATA_DIR"] = str(data)
+
+    # Restore kitchen card, keys, orders and request history from Blob first so a
+    # cold start (camera drop, idle recycle) does not look like a fresh install.
+    try:
+        from app import durable
+
+        durable.hydrate(data)
+    except Exception:  # noqa: BLE001
+        pass
+
     bundle = ROOT / "deploy_bundle"
     for name in ("delivery_reliability.csv", "carbon_footprint.csv", "catalogue_index.json"):
         src, dst = bundle / name, data / name
@@ -29,10 +40,15 @@ def _prepare_runtime() -> None:
             shutil.copy2(src, dst)
 
     config_dir = data / "config"
-    if not config_dir.exists():
-        shutil.copytree(ROOT / "config", config_dir)
-
-    os.environ["UKKO_DATA_DIR"] = str(data)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    for src in (ROOT / "config").iterdir():
+        dst = config_dir / src.name
+        if dst.exists():
+            continue  # keep Blob-restored policy.yaml (and anything else already there)
+        if src.is_dir():
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
     os.environ["UKKO_CONFIG_DIR"] = str(config_dir)
 
     host = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or os.getenv("VERCEL_URL") or "").strip()

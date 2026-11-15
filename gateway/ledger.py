@@ -67,7 +67,14 @@ def register_buyer(buyer_id: str, public_jwk: dict[str, Any]) -> bool:
             )
         _buyers[buyer_id] = public_jwk
         _buyers_file().parent.mkdir(parents=True, exist_ok=True)
-        _buyers_file().write_text(json.dumps(_buyers, indent=2), encoding="utf-8")
+        path = _buyers_file()
+        path.write_text(json.dumps(_buyers, indent=2), encoding="utf-8")
+        try:
+            from app import durable
+
+            durable.mirror(path)
+        except Exception:  # noqa: BLE001
+            pass
         return known is None
 
 
@@ -110,9 +117,16 @@ def record_order(order: dict[str, Any], receipts: Callable[[str], dict[str, str]
         order = {"order_id": order_id, **order, **receipts(order_id)}
         _orders[order["order_id"]] = order
         _order_by_request[(order["buyer_id"], order["request_id"])] = order["order_id"]
-        _orders_file().parent.mkdir(parents=True, exist_ok=True)
-        with _orders_file().open("a", encoding="utf-8") as handle:
+        path = _orders_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(order, ensure_ascii=False) + "\n")
+        try:
+            from app import durable
+
+            durable.mirror(path)
+        except Exception:  # noqa: BLE001
+            pass
         return order
 
 

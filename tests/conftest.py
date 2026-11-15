@@ -73,7 +73,10 @@ foods:
 def _fresh_files() -> None:
     """Empty the data folder and write the fixture catalogue and shelf."""
     shutil.rmtree(gateway_settings.GATEWAY_DATA_DIR, ignore_errors=True)
-    for name in ("audit_log.jsonl", "catalogue_index.json", "usage_cycles.json", "stripe_customer.json"):
+    for name in (
+        "audit_log.jsonl", "catalogue_index.json", "usage_cycles.json",
+        "stripe_customer.json", "live_state.json",
+    ):
         (app_settings.DATA_DIR / name).unlink(missing_ok=True)
     (app_settings.DATA_DIR / "products.json").write_text(fakes.catalogue_file_content(), encoding="utf-8")
     app_settings.SHELF_FILE.write_text(SHELF, encoding="utf-8")
