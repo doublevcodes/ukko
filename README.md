@@ -24,7 +24,7 @@ It is two small programs that run on one laptop:
 | **Valio agent gateway** (`gateway/`) | 8001 | The supplier side: catalogue search, live signed offers, a mock merchant that takes AP2-authorised orders, the supplier's own log, and the same interface as MCP tools. |
 | **Ukko buying agent** (`app/`) | 8000 | The buyer side: the pipeline, the rules, web checks, the dashboard and phone approval. It reaches the gateway over HTTP only, like any outside agent. |
 
-`SPEC.md` is the full design. The supplier trust protocol (signed offers, verification checks, and what a pass does and does not prove) is in [`TRUST.md`](TRUST.md).
+The supplier trust protocol (signed offers, verification checks, and what a pass does and does not prove) is in [`TRUST.md`](TRUST.md).
 
 ## Set up (once)
 
@@ -132,7 +132,7 @@ Tools: `search_products`, `list_requirement_ids`, `get_offers`, `create_checkout
 
 Ukko reorders when stock on hand plus stock already on order would not safely last until the next delivery. The order size tops the shelf back up to cover the lead time, a cover window after delivery, and a safety buffer — then rounds to whole packs and respects storage and shelf-life caps.
 
-Formulas (see also `REORDER_SPEC.md` and `config/shelf.yaml` → `reorder_model`):
+Formulas (see also `config/shelf.yaml` → `reorder_model`):
 
 ```
 IP = on_hand_units + on_order_units
