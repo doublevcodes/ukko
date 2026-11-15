@@ -22,7 +22,7 @@ def run(scenario: str) -> dict[str, Any]:
         raise ValueError(f"Unknown scenario '{scenario}'. Choose one of: {', '.join(SCENARIOS)}.")
 
     # The gateway mints a deliberately broken offer so the buyer never uses a private key.
-    raw = gateway_client._call(  # noqa: SLF001  same public HTTP door as the rest of Stockpot
+    raw = gateway_client._call(  # noqa: SLF001  same public HTTP door as the rest of Ukko
         "POST", "/trust-tests/broken-offer",
         json={"scenario": scenario, "buyer_id": settings.BUYER_ID},
     )

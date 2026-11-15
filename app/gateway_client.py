@@ -1,6 +1,6 @@
-"""Stockpot's only door to the supplier: HTTP calls to the Valio agent gateway.
+"""Ukko's only door to the supplier: HTTP calls to the Valio agent gateway.
 
-Stockpot uses the same public interface as any outside agent would. It never
+Ukko uses the same public interface as any outside agent would. It never
 calls Valio's own API directly.
 """
 

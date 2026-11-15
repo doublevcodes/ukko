@@ -1,5 +1,5 @@
 // The Live camera panel: the shelf video and the clickable product boxes drawn over it.
-// The video is Stockpot's relay of the camera (GET /camera/feed). The boxes come from GET /state
+// The video is Ukko's relay of the camera (GET /camera/feed). The boxes come from GET /state
 // (`detections`): the vision loop on the laptop asks Gemini where each watched product stands.
 
 const EMPTY_VIEWPORT = `<div class="viewport-empty"><b>Camera feed not connected yet</b><span>This space is reserved for the live shelf view.</span></div>`;

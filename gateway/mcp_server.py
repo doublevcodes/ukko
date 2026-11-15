@@ -1,7 +1,7 @@
 """The gateway's interface as MCP tools, so any outside AI agent can use it.
 
 A thin wrapper: every tool is one HTTP call to the running gateway, the same
-calls Stockpot makes. It is not in Stockpot's own path.
+calls Ukko makes. It is not in Ukko's own path.
 
 Run (the gateway must be running on port 8001):
 

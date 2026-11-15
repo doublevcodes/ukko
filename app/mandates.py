@@ -10,7 +10,7 @@ limits the agent key signs each order by itself. Anything else needs the
 manager key to sign that exact order, which happens when a person clicks
 Approve. The supplier checks every signature before it accepts an order.
 
-In this demo both keys sit in the Stockpot backend. In production the manager
+In this demo both keys sit in the Ukko backend. In production the manager
 key would live on the manager's phone or a hardware key (see README).
 """
 

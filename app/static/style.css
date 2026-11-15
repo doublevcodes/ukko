@@ -1,4 +1,4 @@
-/* Stockpot's dark "Restaurant OS" look: the parts shared by the dashboard and the phone approval page.
+/* Ukko's dark "Restaurant OS" look: the parts shared by the dashboard and the phone approval page.
    The dashboard's own layout (camera, inventory, columns) is in os.css. */
 :root {
   color-scheme: dark;

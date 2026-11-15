@@ -1,0 +1,25 @@
+[project]
+name = "ukko"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Ukko buying agent for Junction 2026"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pydantic>=2",
+  "httpx",
+  "python-dotenv",
+  "PyYAML",
+  "google-genai",
+  "exa-py",
+  "mcp",
+  "cryptography",
+  "jwcrypto",
+  "stripe",
+  "segno",
+  "requests",
+  "ap2 @ git+https://github.com/google-agentic-commerce/AP2.git@e1ea56db72a6385bce3e5c1112b3a56ce60acb43",
+]
+
+[tool.vercel]
+entrypoint = "main:app"

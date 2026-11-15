@@ -18,7 +18,7 @@
 
 ## 2. What we are building
 
-**Stockpot** is a stock-watching buying agent for professional kitchens.
+**Ukko** is a stock-watching buying agent for professional kitchens.
 
 A small camera device watches a shelf and notices when a product runs low. That triggers an agent that looks up the product in the wholesaler's (Valio Aimo's) catalogue, compares options, runs live web checks, and then either places the order itself or asks a human to approve, depending on clear rules. Everything it does is logged in plain language. A person can also type a request directly, such as "I need 1,000 litres of lactose-free milk by Monday".
 
@@ -85,7 +85,7 @@ We submit one project to three challenges.
 ## 6. Repo layout
 
 ```
-Stockpot/
+Ukko/
   SPEC.md
   README.md
   .env.example

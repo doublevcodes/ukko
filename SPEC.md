@@ -7,7 +7,7 @@
 ## 0. Settings (filled in)
 
 - **Valio mock API docs:** `api.json`. The base URL and key go in `.env` as `VALIO_BASE_URL` and `VALIO_API_KEY`.
-- **LLM provider and model:** Google Gemini. Key in `GEMINI_API_KEY`, model name in `GEMINI_MODEL` (default `gemini-4-hydrogen`, chosen by timing three models on Stockpot's own prompts: all answers right, about 3 seconds per call).
+- **LLM provider and model:** Google Gemini. Key in `GEMINI_API_KEY`, model name in `GEMINI_MODEL` (default `gemini-4-hydrogen`, chosen by timing three models on Ukko's own prompts: all answers right, about 3 seconds per call).
 - **Exa key:** in `.env` as `EXA_API_KEY`
 - **Shelf camera video:** the UNO Q's MJPEG stream, in `.env` as `CAMERA_FEED_URL` (default `http://10.0.41.90:5000/`). See Section 13a.
 - **Demo product on the shelf:** Valio product `469363` (Arla lactose-free semi-skimmed milk drink 1 L UHT), set in `config/shelf.yaml`. It has limited stock, which gives the "partial availability" story.
@@ -23,7 +23,7 @@
 
 ## 2. What we are building
 
-**Stockpot** is a stock-watching buying agent for professional kitchens.
+**Ukko** is a stock-watching buying agent for professional kitchens.
 
 A small camera device watches a shelf and notices when a product runs low. That triggers an agent that looks up the product in the wholesaler's (Valio Aimo's) catalogue, compares options, runs live web checks, and then either places the order itself or asks a human to approve, depending on clear rules. Everything it does is logged in plain language. A person can also type a request directly, such as "I need 1,000 litres of lactose-free milk by Monday".
 
@@ -56,11 +56,11 @@ We submit one project to three challenges.
 
 ## 4. Architecture
 
-Two services on one laptop. Stockpot talks to the gateway over HTTP only, exactly as any outside agent would.
+Two services on one laptop. Ukko talks to the gateway over HTTP only, exactly as any outside agent would.
 
 ```
 [UNO Q + camera] --POST /events/sensor-->  +-----------------------------+
-[Dashboard request box] --POST /requests-> | Stockpot buying agent :8000 |
+[Dashboard request box] --POST /requests-> | Ukko buying agent :8000 |
 [Phone approval page] --approve/reject-->  +--------------+--------------+
                                                           |
                                                       Pipeline
@@ -120,7 +120,7 @@ app/                      # buyer side (port 8000)
   policy.py               # the rules (pure code)
   llm.py                  # the only file that calls Gemini
   camera.py  vision.py    # the shelf video, and where the watched products are in it (Section 13a)
-  gateway_client.py       # the only way Stockpot reaches the supplier
+  gateway_client.py       # the only way Ukko reaches the supplier
   mandates.py  authority.py   # AP2 buyer side: keys, standing limits, per-order mandates
   config.py  categories.py  settings.py
   web/exa_checks.py  web/judge.py  web/plan_checks.py
@@ -243,7 +243,7 @@ There is a unit test for every rule.
 - **Auto-approve:** the agent key signs the specific order under those limits. The gateway checks the chain and refuses anything outside them.
 - **Needs approval:** clicking Approve (dashboard or phone) makes the manager key sign the exact cart and amount.
 - `policy.py` still makes the decision. AP2 is the proof, and the gateway's check is a second, independent guard.
-- The manager key lives in the Stockpot backend as a stand-in for a real signing device. This is a known production gap.
+- The manager key lives in the Ukko backend as a stand-in for a real signing device. This is a known production gap.
 
 ## 11. Web checks with Exa (`app/web/exa_checks.py`)
 
@@ -272,7 +272,7 @@ There is a unit test for every rule.
 - `GET /approve/{code}` (phone page), `GET /phone/{code}` and `POST /phone/{code}`: approve or reject from a phone. The code works once.
 - `GET /policy`, `PUT /policy`: read and change the rules.
 
-There is no reset endpoint: restarting Stockpot clears its live state (the audit file is kept).
+There is no reset endpoint: restarting Ukko clears its live state (the audit file is kept).
 
 Run the pipeline as a background task so the POST returns immediately and the dashboard shows progress through polling. Bind to host `0.0.0.0` so the UNO Q and phones can reach it on the local network. Allow all CORS origins.
 

@@ -38,7 +38,7 @@ def _get_client() -> httpx.Client:
     if _client is None:
         _client = httpx.Client(
             base_url=settings.VALIO_BASE_URL,
-            headers={"X-API-Key": settings.VALIO_API_KEY, "User-Agent": "stockpot-gateway/0.1"},
+            headers={"X-API-Key": settings.VALIO_API_KEY, "User-Agent": "ukko-gateway/0.1"},
             timeout=TIMEOUT_SECONDS,
             transport=_transport,
             follow_redirects=True,  # the download endpoints redirect to the file

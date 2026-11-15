@@ -26,14 +26,14 @@ BOUNDARY = "frame"
 FRESH_SECONDS = 5.0     # no new picture for this long means the camera has stopped sending
 RETRY_SECONDS = 3.0
 MAX_BUFFER = 4_000_000  # a "picture" longer than this is not one; start again
-log = logging.getLogger("stockpot.camera")
+log = logging.getLogger("ukko.camera")
 
 _lock = threading.Lock()
 _frame: bytes | None = None
 _frame_at = 0.0  # time.monotonic() when the newest picture arrived
 _count = 0       # pictures received so far, so a reader can tell a new one from the one it has
 _started = False
-_stopping = False  # True once Stockpot was told to stop: the open video streams end
+_stopping = False  # True once Ukko was told to stop: the open video streams end
 
 
 def split_frames(buffer: bytearray) -> list[bytes]:
@@ -94,7 +94,7 @@ def _read_stream(url: str) -> None:
 
 
 def _read_forever(url: str) -> None:
-    """Stay connected for as long as Stockpot runs. A camera that is off is reported once, not every retry."""
+    """Stay connected for as long as Ukko runs. A camera that is off is reported once, not every retry."""
     reported = False
     while True:
         before = _count
@@ -122,7 +122,7 @@ def start() -> None:
 
 
 def end_relays_on_exit() -> None:
-    """Make Ctrl+C end the open video streams, so one Ctrl+C still stops Stockpot.
+    """Make Ctrl+C end the open video streams, so one Ctrl+C still stops Ukko.
 
     uvicorn waits for open connections before it exits, and a video stream never
     ends by itself: without this the server hangs until every dashboard is closed.
@@ -148,7 +148,7 @@ async def relay() -> AsyncIterator[bytes]:
     """The video as an MJPEG stream of our own: one part per new picture.
 
     Stays open across brief camera gaps. Ending the stream made the dashboard freeze on
-    the last frame: the browser kept the <img>, Stockpot still reported connected, and
+    the last frame: the browser kept the <img>, Ukko still reported connected, and
     nothing remounted the feed when pictures returned.
     """
     sent = 0

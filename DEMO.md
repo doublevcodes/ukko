@@ -4,7 +4,7 @@
 
 ## Prep
 
-1. Gateway on :8001, Stockpot on :8000, Stripe **test** key in `.env`.
+1. Gateway on :8001, Ukko on :8000, Stripe **test** key in `.env`.
 2. Settings → Payment → Add card once (`4242 4242 4242 4242`).
 3. Spend limit / stock set so the first run needs Approve (Plan B / substitute story).
 4. Prefer `python sensor/simulate.py --product … --level low` over live vision.

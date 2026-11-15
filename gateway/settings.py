@@ -20,21 +20,31 @@ def _flag(name: str, default: bool) -> bool:
 
 
 # Everything the gateway writes (keys, order ledger, logs, downloads) goes here.
-DATA_DIR = Path(os.getenv("STOCKPOT_DATA_DIR") or ROOT / "data")
+DATA_DIR = Path(os.getenv("UKKO_DATA_DIR") or ROOT / "data")
 GATEWAY_DATA_DIR = DATA_DIR / "gateway"
+BUNDLE_DIR = ROOT / "deploy_bundle"
 
 VALIO_BASE_URL = os.getenv("VALIO_BASE_URL", "").rstrip("/")
 VALIO_API_KEY = os.getenv("VALIO_API_KEY", "")
 # The mock API ignores the customer number, but the field is required.
 VALIO_CUSTOMER = os.getenv("VALIO_CUSTOMER", "123")
 
-# The catalogue file: the downloaded copy first, then the one from the portal.
+# The catalogue file: the downloaded copy first, then the one from the portal,
+# then the slim index shipped for Vercel (deploy_bundle/).
 CATALOGUE_PATHS = [
     DATA_DIR / "products.json",
+    DATA_DIR / "catalogue_index.json",
     ROOT / "valio_aimo_junction26_product_data.json",
+    BUNDLE_DIR / "catalogue_index.json",
 ]
-RELIABILITY_CSV = DATA_DIR / "delivery_reliability.csv"
-CARBON_CSV = DATA_DIR / "carbon_footprint.csv"
+RELIABILITY_CSV = next(
+    (p for p in (DATA_DIR / "delivery_reliability.csv", BUNDLE_DIR / "delivery_reliability.csv") if p.exists()),
+    DATA_DIR / "delivery_reliability.csv",
+)
+CARBON_CSV = next(
+    (p for p in (DATA_DIR / "carbon_footprint.csv", BUNDLE_DIR / "carbon_footprint.csv") if p.exists()),
+    DATA_DIR / "carbon_footprint.csv",
+)
 
 # See .env.example: an open question for the Valio mentors.
 ENFORCE_ORDER_CUTOFF = _flag("ENFORCE_ORDER_CUTOFF", True)
@@ -43,7 +53,7 @@ MERCHANT_ID = "valio-aimo-gateway"
 MERCHANT_NAME = "Valio Aimo (Junction 2026 mock)"
 CURRENCY = "EUR"
 # Default JWT audience when the buyer does not name itself on /offers.
-DEFAULT_OFFER_AUDIENCE = os.getenv("DEFAULT_OFFER_AUDIENCE", "stockpot-demo-kitchen")
+DEFAULT_OFFER_AUDIENCE = os.getenv("DEFAULT_OFFER_AUDIENCE", "ukko-demo-kitchen")
 
 # How long a signed offer or a signed checkout stays valid (wall clock, not the reorder demo clock).
 OFFER_TTL_SECONDS = int(os.getenv("OFFER_TTL_SECONDS") or 600)

@@ -28,7 +28,7 @@ CACHE_SECONDS = 600
 RESULTS_PER_SEARCH = 5
 _cache: dict[tuple, tuple[float, WebFinding]] = {}
 _pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="exa")
-log = logging.getLogger("stockpot.web")
+log = logging.getLogger("ukko.web")
 
 
 def _exa_search(query: str, since: date | None) -> list[dict[str, Any]]:

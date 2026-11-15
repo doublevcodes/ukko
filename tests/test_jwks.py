@@ -50,6 +50,6 @@ def test_well_known_jwks_endpoint():
     assert body == keys.jwks()
     assert "d" not in body["keys"][0]
     # Private key file must not live under the project root outside data/.
-    assert str(settings.GATEWAY_DATA_DIR).endswith("/data/gateway") or "stockpot-tests-" in str(
+    assert str(settings.GATEWAY_DATA_DIR).endswith("/data/gateway") or "ukko-tests-" in str(
         settings.GATEWAY_DATA_DIR
     )

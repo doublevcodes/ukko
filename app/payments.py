@@ -196,7 +196,7 @@ def _ensure_customer() -> str:
     stored = _read_file()
     if stored:
         return stored["customer_id"]
-    customer_id = _live().create_customer("Stockpot demo kitchen")
+    customer_id = _live().create_customer("Ukko demo kitchen")
     _save_profile(customer_id, "", "", "")
     return customer_id
 

@@ -32,7 +32,7 @@ def show(finding: WebFinding) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Try Stockpot's web checks.")
+    parser = argparse.ArgumentParser(description="Try Ukko's web checks.")
     parser.add_argument("--product", default="Arla Semi skimmed milkdrink 1 L UHT lactose free")
     parser.add_argument("--brand", default="Arla")
     parser.add_argument("--constraint", default="FREE_FROM_LACTOSE", help="a requirement id, checked for the product")

@@ -19,11 +19,11 @@ from sensor.send_event import send_stock_level  # noqa: E402
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Send a fake shelf-sensor event to Stockpot.")
+    parser = argparse.ArgumentParser(description="Send a fake shelf-sensor event to Ukko.")
     parser.add_argument("--product", default="milk_lactose_free", help="a key from config/shelf.yaml")
     parser.add_argument("--level", default="low", choices=["full", "low", "empty"])
     parser.add_argument("--confidence", type=float, default=0.93)
-    parser.add_argument("--url", default="http://127.0.0.1:8000", help="where Stockpot is running")
+    parser.add_argument("--url", default="http://127.0.0.1:8000", help="where Ukko is running")
     parser.add_argument("--repeat", type=int, default=1, help="send the same event several times (to show duplicates are ignored)")
     args = parser.parse_args()
 

@@ -14,7 +14,7 @@ RECALL_NOTICE = [{"title": "Recall: Arla semi skimmed milk", "url": "https://exa
 
 
 def test_gateway_refuses_the_agents_mandate_and_a_person_is_asked(world, monkeypatch):
-    """Stockpot's own rules say "go", but the limits the supplier holds are lower: the supplier wins."""
+    """Ukko's own rules say "go", but the limits the supplier holds are lower: the supplier wins."""
     stale = authority.renew(PolicyConfig(auto_approve_max_total_eur=100))
     monkeypatch.setattr(authority, "ensure", lambda _policy: stale)
     record = shelf_runs_low()  # 200 EUR: fine for the 500 EUR policy, above the signed 100 EUR

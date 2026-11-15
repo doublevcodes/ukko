@@ -1,8 +1,8 @@
-# Stockpot
+# Ukko
 
 A stock-watching buying agent for professional kitchens (Junction 2026).
 
-A camera notices a shelf product running low. Stockpot looks the product up at the wholesaler (Valio Aimo), compares
+A camera notices a shelf product running low. Ukko looks the product up at the wholesaler (Valio Aimo), compares
 options, runs live web checks, and then either orders on its own or asks a person, following clear rules. Every step
 is logged in plain language. A person can also type a request, such as "20 kg of butter by Friday, organic if possible".
 
@@ -11,7 +11,7 @@ It is two small programs that run on one laptop:
 | Program | Port | What it does |
 |---|---|---|
 | **Valio agent gateway** (`gateway/`) | 8001 | The supplier side: catalogue search, live signed offers, a mock merchant that takes AP2-authorised orders, the supplier's own log, and the same interface as MCP tools. |
-| **Stockpot buying agent** (`app/`) | 8000 | The buyer side: the pipeline, the rules, web checks, the dashboard and phone approval. It reaches the gateway over HTTP only, like any outside agent. |
+| **Ukko buying agent** (`app/`) | 8000 | The buyer side: the pipeline, the rules, web checks, the dashboard and phone approval. It reaches the gateway over HTTP only, like any outside agent. |
 
 `SPEC.md` is the full design. The supplier trust protocol (signed offers, verification checks, and what a pass does and does not prove) is in [`TRUST.md`](TRUST.md).
 
@@ -28,7 +28,7 @@ cp .env.example .env                             # then fill in VALIO_API_KEY, G
 python scripts/try_valio.py --download           # fetches the catalogue (87 MB) and two small data files into data/
 ```
 
-Stripe: use **test mode** keys from the [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys) (`STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY`). After Stockpot is running, open **Settings → Payment → Add card (once)** — the card form opens in the dialog (no redirect). Use `4242 4242 4242 4242`, any future expiry, any CVC. Every later order (auto-approve or Approve) charges that card.
+Stripe: use **test mode** keys from the [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys) (`STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY`). After Ukko is running, open **Settings → Payment → Add card (once)** — the card form opens in the dialog (no redirect). Use `4242 4242 4242 4242`, any future expiry, any CVC. Every later order (auto-approve or Approve) charges that card.
 
 ## Run
 
@@ -36,7 +36,7 @@ Two terminals, both with `source .venv/bin/activate`:
 
 ```bash
 uvicorn gateway.main:app --port 8001                 # terminal 1: the gateway
-uvicorn app.main:app --host 0.0.0.0 --port 8000      # terminal 2: Stockpot
+uvicorn app.main:app --host 0.0.0.0 --port 8000      # terminal 2: Ukko
 python -m gateway.mcp_server                         # terminal 3: MCP for outside agents
 ```
 
@@ -46,10 +46,10 @@ python -m gateway.mcp_server                         # terminal 3: MCP for outsi
 - MCP discovery: http://localhost:8001/.well-known/mcp.json
 - MCP endpoint (streamable HTTP): http://127.0.0.1:8002/mcp
 
-If port 8000 is used by something else, pick another one and tell Stockpot, so the phone link is right:
+If port 8000 is used by something else, pick another one and tell Ukko, so the phone link is right:
 
 ```bash
-STOCKPOT_PORT=8010 uvicorn app.main:app --host 0.0.0.0 --port 8010
+UKKO_PORT=8010 uvicorn app.main:app --host 0.0.0.0 --port 8010
 ```
 
 The header of the dashboard shows red labels if the gateway, Gemini, Exa or Stripe keys are missing, or if no kitchen card is on file.
@@ -60,7 +60,7 @@ The header of the dashboard shows red labels if the gateway, Gemini, Exa or Stri
 2. Take cans off the shelf, or fake the camera: `python sensor/simulate.py --product hell_energy --level low`
 3. The request opens in the **Replenishment needed** card. Open "What the agent did, step by step" (or watch the
    Activity panel) for the live offers from Valio, the plans, the web checks and the rules.
-4. Only 384 of the 400 litres are in stock, so Stockpot picks plan B: the usual milk plus a substitute for the rest.
+4. Only 384 of the 400 litres are in stock, so Ukko picks plan B: the usual milk plus a substitute for the rest.
    The total is above 500 EUR and there is a substitute, so it asks for approval.
 5. Click **Approve** (or **Approve & pay** on the phone). The saved Stripe test card is charged; no card form appears.
 6. The order confirmation shows the Stripe payment method and AP2 flow. Open http://localhost:8001 to see the same order from the supplier's side.
@@ -72,8 +72,8 @@ To show a typed request, use the "What do you need?" box in the Replenishment ne
 **Safe mode / Autopilot** in the header is the same spend-limit rule: Safe mode sets the limit to 0 EUR, so every
 order waits for a person; Autopilot puts the earlier limit back.
 
-**Live camera.** The dashboard shows the shelf camera's video (`CAMERA_FEED_URL` in `.env`, relayed by Stockpot at
-`/camera/feed`). While a dashboard is open, Stockpot asks Gemini every few seconds where the foods from
+**Live camera.** The dashboard shows the shelf camera's video (`CAMERA_FEED_URL` in `.env`, relayed by Ukko at
+`/camera/feed`). While a dashboard is open, Ukko asks Gemini every few seconds where the foods from
 `config/camera_foods.yaml` stand in the picture, draws a box over each one it finds, and estimates how many units are
 visible. Edit that file to teach the camera what it may see. Each food can name an exact Valio `product_id`, or leave
 it blank so a reorder searches for the closest catalogue match. Counts and confidence update the shelf rows. A drop
@@ -97,7 +97,7 @@ pytest                           # the tests use a fake Valio and never touch th
 
 ## Outside agents via MCP
 
-Stockpot talks to the gateway over HTTP. **Other** agents (Cursor, Claude Desktop, custom clients) can use the same supplier API as MCP tools.
+Ukko talks to the gateway over HTTP. **Other** agents (Cursor, Claude Desktop, custom clients) can use the same supplier API as MCP tools.
 
 1. Gateway on :8001, then `python -m gateway.mcp_server` (listens on `0.0.0.0:8002/mcp` by default).
 2. Point an MCP client at `http://127.0.0.1:8002/mcp` (streamable HTTP).
@@ -195,13 +195,13 @@ movement is real Stripe: a kitchen card is saved once, then every order creates 
 - Saving the rules makes the **manager key** sign the agent's standing limits: which supplier, how much per order,
   how much in total.
 - When the rules say "go", the **agent key** signs that one order under those limits. The gateway checks the
-  signatures and the limits itself and refuses anything outside them, whatever Stockpot's own rules said.
+  signatures and the limits itself and refuses anything outside them, whatever Ukko's own rules said.
 - When a person approves, the **manager key** signs that exact cart and amount.
-- Immediately before the supplier records the order, Stockpot charges the saved Stripe test card. If the charge
+- Immediately before the supplier records the order, Ukko charges the saved Stripe test card. If the charge
   fails, nothing is ordered.
-- Before any order the gateway re-prices the cart. If a price rose or stock fell, nothing is ordered and Stockpot
+- Before any order the gateway re-prices the cart. If a price rose or stock fell, nothing is ordered and Ukko
   plans again (and asks again, if a person had approved).
-- Offers, checkouts and receipts are signed by the supplier (ES256), and Stockpot verifies them.
+- Offers, checkouts and receipts are signed by the supplier (ES256), and Ukko verifies them.
   Anyone can: the public keys are at http://localhost:8001/.well-known/jwks.json
   See [`TRUST.md`](TRUST.md) for the minimum claim set and the seven verification checks.
   Settings → Trust test runs the same verifier against deliberately broken offers.
@@ -221,7 +221,7 @@ Do not show `.env` keys. Pre-save the test card (or a 5s cold open with 4242…)
 
 ## Not production yet
 
-- The manager key lives in the Stockpot backend. In production it belongs on the manager's phone or a hardware key.
+- The manager key lives in the Ukko backend. In production it belongs on the manager's phone or a hardware key.
 - The phone approval link has no login; the one-time code in the link is the only guard.
 - Buyers register their key with a plain call (`POST /buyers`), standing in for real customer onboarding.
 - The gateway logs which agent is asking but does not restrict what each agent may do.
@@ -232,6 +232,6 @@ Do not show `.env` keys. Pre-save the test card (or a 5s cold open with 4242…)
 
 ## Starting clean
 
-Restarting Stockpot clears its requests (the audit file `data/audit_log.jsonl` is kept).
+Restarting Ukko clears its requests (the audit file `data/audit_log.jsonl` is kept).
 To empty the supplier's orders and log as well, stop the gateway and delete `data/gateway/orders.jsonl` and
 `data/gateway/supplier_log.jsonl`.

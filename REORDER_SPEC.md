@@ -1,4 +1,4 @@
-# Reorder model — Ukko / Stockpot
+# Reorder model — Ukko / Ukko
 
 ## 1. Context
 

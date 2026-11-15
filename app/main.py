@@ -1,4 +1,4 @@
-"""Stockpot buying agent: HTTP routes.
+"""Ukko buying agent: HTTP routes.
 
 Run:  uvicorn app.main:app --host 0.0.0.0 --port 8000
 Dashboard: http://localhost:8000   API description: http://localhost:8000/docs
@@ -97,7 +97,7 @@ app.mount("/static", FreshStaticFiles(directory=STATIC), name="static")
 @app.get("/health")
 def health() -> dict[str, Any]:
     pay = payments.status()
-    return {"status": "ok", "service": "stockpot", "gateway_url": settings.GATEWAY_URL,
+    return {"status": "ok", "service": "ukko", "gateway_url": settings.GATEWAY_URL,
             "gemini_key_set": bool(settings.GEMINI_API_KEY), "exa_key_set": bool(settings.EXA_API_KEY),
             "stripe_configured": pay["configured"], "stripe_ready": pay["ready"],
             "camera_connected": camera.connected()}
@@ -105,7 +105,7 @@ def health() -> dict[str, Any]:
 
 @app.get("/camera/feed", include_in_schema=False)
 def camera_feed() -> StreamingResponse:
-    """The shelf camera's video for the dashboard, relayed from Stockpot's one connection to the camera."""
+    """The shelf camera's video for the dashboard, relayed from Ukko's one connection to the camera."""
     if not camera.connected():
         raise HTTPException(503, "The camera is not sending video.")
     return StreamingResponse(camera.relay(), media_type=f"multipart/x-mixed-replace; boundary={camera.BOUNDARY}",

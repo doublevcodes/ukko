@@ -25,7 +25,7 @@ def _unsigned_token(header: dict, payload: dict, signature: str = "") -> str:
 def _settings(**overrides) -> TrustSettings:
     base = dict(
         approved_issuers=(settings.MERCHANT_ID,),
-        audience="stockpot-demo-kitchen",
+        audience="ukko-demo-kitchen",
         origin_requirements=(),
     )
     base.update(overrides)
@@ -36,7 +36,7 @@ def _fresh_claims(**overrides) -> dict:
     now = int(time.time())
     claims = {
         "iss": settings.MERCHANT_ID,
-        "aud": "stockpot-demo-kitchen",
+        "aud": "ukko-demo-kitchen",
         "jti": "off_test_valid",
         "iat": now,
         "exp": now + 600,
@@ -184,7 +184,7 @@ def test_signed_claims_helper_matches_minimum_fields():
         "earliest_delivery": "2026-11-16", "country_of_origin": "fi", "producer": "Valio Oy",
         "labels": ["EU_ORGANIC_FARMING"],
     }
-    claims = signed_claims(offer, "stockpot-demo-kitchen", issued, expires, "off_abc")
+    claims = signed_claims(offer, "ukko-demo-kitchen", issued, expires, "off_abc")
     assert set(claims) >= {"iss", "aud", "jti", "iat", "exp", "product", "price", "stock", "origin"}
     assert claims["price"]["unit_price"] == "1.50"
     assert claims["origin"]["certificates"][0]["id"] == "EU_ORGANIC_FARMING"

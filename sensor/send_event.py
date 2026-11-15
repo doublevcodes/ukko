@@ -15,13 +15,13 @@ TIMEOUT_SECONDS = 3
 
 def send_stock_level(product_key: str, level: str, confidence: float, backend_url: str,
                      device_id: str = "uno-q-1") -> dict | None:
-    """Tell Stockpot that a shelf product is "full", "low" or "empty".
+    """Tell Ukko that a shelf product is "full", "low" or "empty".
 
     product_key  a key from config/shelf.yaml, for example "milk_lactose_free"
     confidence   how sure the on-board model is, from 0 to 1
     backend_url  for example "http://192.168.1.20:8000"
 
-    Returns Stockpot's answer as a dict, or None if it could not be reached.
+    Returns Ukko's answer as a dict, or None if it could not be reached.
     """
     event = {
         "product_key": product_key, "level": level, "confidence": confidence,
@@ -32,5 +32,5 @@ def send_stock_level(product_key: str, level: str, confidence: float, backend_ur
         response.raise_for_status()
         return response.json()
     except Exception as error:  # noqa: BLE001  by design: report and carry on
-        print(f"send_stock_level: could not reach Stockpot ({type(error).__name__}: {error})")
+        print(f"send_stock_level: could not reach Ukko ({type(error).__name__}: {error})")
         return None

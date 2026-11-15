@@ -36,7 +36,7 @@ ABSENT_CONFIDENCE = 0.75     # looked and did not see the product
 VIEWER_SECONDS = 15.0        # look only while a dashboard asked for GET /state this recently
 PAUSE_AFTER_FAILURE = 30.0   # after a refused or slow answer, leave the model alone for a while
 VISION_DEVICE = "vision"
-log = logging.getLogger("stockpot.vision")
+log = logging.getLogger("ukko.vision")
 
 
 def _reorder_below(row: state.ShelfLevel | None = None) -> float:

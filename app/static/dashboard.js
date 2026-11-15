@@ -4,7 +4,7 @@
 // the other panels are drawn by os_panels.js, os_camera.js and os_inventory.js.
 
 const SAMPLE = new URLSearchParams(location.search).has("sample");
-const AUTOPILOT_LIMIT_KEY = "stockpot.autopilot_limit";  // the spend limit to restore when leaving Safe mode
+const AUTOPILOT_LIMIT_KEY = "ukko.autopilot_limit";  // the spend limit to restore when leaving Safe mode
 // Same as app/state.py OPEN_STATUSES: in-progress work that can take over the decision panel.
 const OPEN = new Set(["working", "needs_clarification", "awaiting_approval"]);
 const isOpen = (request) => OPEN.has(request.decision.status);
@@ -322,7 +322,7 @@ $("request-form").addEventListener("submit", async (event) => {
 
 async function actOnApproval(requestId, action, note) {
   await send("POST", `/approvals/${requestId}`, { action, note });
-  if (selected === requestId) selected = null;  // ordered/rejected stay in Orders, not under Ask Stockpot
+  if (selected === requestId) selected = null;  // ordered/rejected stay in Orders, not under Ask Ukko
   poll();
 }
 

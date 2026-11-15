@@ -1,6 +1,6 @@
 """Live state in memory, plus the append-only audit log on disk.
 
-Restarting Stockpot clears the live state. The audit file is kept.
+Restarting Ukko clears the live state. The audit file is kept.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ REQUESTS_SHOWN = 20
 
 
 class RequestRecord(BaseModel):
-    """Everything known about one request while Stockpot is running."""
+    """Everything known about one request while Ukko is running."""
 
     id: str
     created_at: datetime

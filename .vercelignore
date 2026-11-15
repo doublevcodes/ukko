@@ -1,0 +1,15 @@
+.venv
+.pytest_cache
+.cursor
+tests
+scripts
+sensor
+*.md
+api.json
+valio_aimo_junction26_product_data.json
+valio_aimo_junction26_product_data_schema.json
+agent-transcripts
+__pycache__
+*.pyc
+.env
+.git

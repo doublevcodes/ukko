@@ -21,7 +21,7 @@ from app import settings
 TIMEOUT_MS = 10_000
 ATTEMPTS = 2  # one retry, and only when the service was slow or had a problem of its own
 _client: genai.Client | None = None
-log = logging.getLogger("stockpot.llm")
+log = logging.getLogger("ukko.llm")
 
 
 class LLMError(Exception):

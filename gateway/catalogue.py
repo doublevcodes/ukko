@@ -88,14 +88,25 @@ def _slim(raw: dict) -> dict:
 
 
 def _load_slim(source: Path) -> list[dict]:
-    """Read the slim index from the cache, rebuilding it if the source changed."""
+    """Read the slim index from the cache, rebuilding it if the source changed.
+
+    `source` may be the raw 87 MB catalogue, or an already-slim
+    `catalogue_index.json` (used on Vercel via deploy_bundle/).
+    """
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if isinstance(payload, dict) and payload.get("products"):
+        first = payload["products"][0]
+        if isinstance(first, dict) and "synkkaData" not in first:
+            return payload["products"]
+
     cache = settings.DATA_DIR / "catalogue_index.json"
     stamp = [source.stat().st_size, int(source.stat().st_mtime)]
     if cache.exists():
         cached = json.loads(cache.read_text(encoding="utf-8"))
         if cached.get("stamp") == stamp:
             return cached["products"]
-    products = [_slim(raw) for raw in json.loads(source.read_text(encoding="utf-8"))]
+    raw_rows = payload if isinstance(payload, list) else payload.get("products") or []
+    products = [_slim(raw) for raw in raw_rows]
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"stamp": stamp, "products": products}, ensure_ascii=False), encoding="utf-8")
     return products

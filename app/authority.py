@@ -25,11 +25,11 @@ _supplier: Merchant | None = None
 
 def manager_key() -> JWK:
     """Stands for the kitchen manager's signing device. Used only when a person approves."""
-    return mandates.load_or_create_key(settings.KEYS_DIR / "manager.json", "stockpot-manager-1")
+    return mandates.load_or_create_key(settings.KEYS_DIR / "manager.json", "ukko-manager-1")
 
 
 def agent_key() -> JWK:
-    return mandates.load_or_create_key(settings.KEYS_DIR / "agent.json", "stockpot-agent-1")
+    return mandates.load_or_create_key(settings.KEYS_DIR / "agent.json", "ukko-agent-1")
 
 
 def supplier() -> Merchant:

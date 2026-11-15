@@ -14,11 +14,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
-_tmp = Path(tempfile.mkdtemp(prefix="stockpot-tests-"))
+_tmp = Path(tempfile.mkdtemp(prefix="ukko-tests-"))
 (_tmp / "data").mkdir()
 shutil.copytree(ROOT / "config", _tmp / "config")
 os.environ.update({
-    "STOCKPOT_DATA_DIR": str(_tmp / "data"), "STOCKPOT_CONFIG_DIR": str(_tmp / "config"),
+    "UKKO_DATA_DIR": str(_tmp / "data"), "UKKO_CONFIG_DIR": str(_tmp / "config"),
     "VALIO_BASE_URL": "https://valio.invalid", "VALIO_API_KEY": "test-key",
     "GEMINI_API_KEY": "", "EXA_API_KEY": "", "ENFORCE_ORDER_CUTOFF": "true",
     "CAMERA_FEED_URL": "",  # no camera: nothing in the tests opens a video stream
@@ -88,7 +88,7 @@ def _seed_kitchen_card() -> None:
 
 @pytest.fixture(autouse=True)
 def world(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """A clean gateway and a clean Stockpot wired together in memory, with fakes outside."""
+    """A clean gateway and a clean Ukko wired together in memory, with fakes outside."""
     _fresh_files()
     valio, fake_llm, exa = fakes.FakeValio(), fakes.FakeLLM(), fakes.FakeExa()
     stripe = fakes.FakeStripe()
