@@ -106,8 +106,13 @@ def health() -> dict[str, Any]:
 @app.post("/reset")
 def reset_runtime() -> dict[str, Any]:
     """Clear requests, shelf live fields, audit and on-order; keep Stripe card and keys."""
-    state.reset_runtime()
-    return {"ok": True, "requests": 0, "message": "Runtime state cleared."}
+    payment = state.reset_runtime()
+    return {
+        "ok": True,
+        "requests": 0,
+        "message": "Runtime state cleared.",
+        "payment": payment,
+    }
 
 
 @app.get("/camera/feed", include_in_schema=False)
@@ -253,10 +258,13 @@ def _decide(record: state.RequestRecord | None, body: ApprovalAction, tasks: Bac
         raise HTTPException(404, "No such request, or this approval link has already been used.")
     if not intake.claim_approval(record):
         raise HTTPException(409, "This request is not waiting for approval.")
-    if body.action == "approve":
+    # Only an explicit reject cancels; anything else must not fall through to reject.
+    if body.action == "reject":
+        intake.reject(record, body.note, where)
+    elif body.action == "approve":
         tasks.add_task(intake.run_approved, record, body.note, where)
     else:
-        intake.reject(record, body.note, where)
+        raise HTTPException(400, f"Unknown approval action '{body.action}'.")
     return {"request_id": record.id, "action": body.action}
 
 

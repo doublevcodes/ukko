@@ -129,3 +129,9 @@ def test_unrecognised_category_needs_approval():
 def test_incomplete_order_needs_approval():
     outcome, reasons = outcome_and_reasons(plan=plan(coverage=Decimal("0.6")))
     assert outcome == "needs_approval" and "Incomplete order rule: the plan covers only 60%" in reasons
+
+
+def test_typed_request_always_needs_approval():
+    outcome, reasons = outcome_and_reasons(request=request(source="typed"), findings=[finding("none")])
+    assert outcome == "needs_approval"
+    assert "Manual request rule: typed requests always need a person's approval." in reasons

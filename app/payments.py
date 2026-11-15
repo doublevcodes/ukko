@@ -18,6 +18,9 @@ import stripe
 from app import settings
 
 PROFILE_VERSION = 1
+# Written by tests/conftest.py. Live Stripe rejects these; never treat them as a real card.
+_FIXTURE_CUSTOMERS = frozenset({"cus_test_1"})
+_FIXTURE_PAYMENT_METHODS = frozenset({"pm_test_visa"})
 
 
 class PaymentError(Exception):
@@ -144,7 +147,10 @@ class StripeBackend:
             raise PaymentError(f"The kitchen card was declined ({error.user_message or error.code}). "
                                "Open Change card in Settings if you need to use another card.") from error
         except stripe.error.InvalidRequestError as error:
-            raise PaymentError(f"Stripe could not charge the saved card ({error.user_message or error.code}). "
+            detail = error.user_message or error.code or type(error).__name__
+            if error.code == "resource_missing" or "no such" in str(detail).lower():
+                raise PaymentError(f"No such saved card ({detail}).") from error
+            raise PaymentError(f"Stripe could not charge the saved card ({detail}). "
                                "Open Change card in Settings and complete setup again.") from error
         except stripe.error.StripeError as error:
             raise PaymentError(f"Stripe could not take payment ({error.user_message or type(error).__name__}).") from error
@@ -184,9 +190,24 @@ def _read_file() -> dict[str, Any] | None:
     return data if data.get("customer_id") else None
 
 
+def _is_fixture_profile(data: dict[str, Any]) -> bool:
+    return (
+        data.get("customer_id") in _FIXTURE_CUSTOMERS
+        or data.get("payment_method_id") in _FIXTURE_PAYMENT_METHODS
+    )
+
+
+def _using_live_stripe() -> bool:
+    return isinstance(_live(), StripeBackend)
+
+
 def _ready_profile() -> dict[str, Any] | None:
     data = _read_file()
     if not data or not data.get("payment_method_id"):
+        return None
+    # Fixture ids from pytest must not look "ready" against real Stripe (Blob can revive them).
+    if _is_fixture_profile(data) and _using_live_stripe():
+        clear_profile()
         return None
     return data
 
@@ -208,8 +229,27 @@ def _save_profile(customer_id: str, payment_method_id: str, brand: str, last4: s
 
 
 def clear_profile() -> None:
-    """Forget the saved card on disk (tests)."""
-    _profile_path().unlink(missing_ok=True)
+    """Forget the saved card on disk and in Blob so the next cold start stays clear."""
+    from app import durable
+
+    path = _profile_path()
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # Empty JSON (no customer_id) overwrites any Blob copy; then remove the local file.
+    path.write_text("{}\n", encoding="utf-8")
+    durable.mirror(path)
+    path.unlink(missing_ok=True)
+
+
+def preserve_for_reset() -> dict[str, Any]:
+    """Reset orders must keep a real kitchen card; drop fixture profiles and re-mirror."""
+    from app import durable
+
+    data = _read_file()
+    if data and _is_fixture_profile(data) and _using_live_stripe():
+        clear_profile()
+    elif data and data.get("payment_method_id"):
+        durable.mirror(_profile_path())
+    return status()
 
 
 def status() -> dict[str, Any]:
@@ -236,6 +276,8 @@ def status() -> dict[str, Any]:
 def _ensure_customer() -> str:
     stored = _read_file()
     if stored and stored.get("customer_id"):
+        if _is_fixture_profile(stored) and _using_live_stripe():
+            return _reset_customer()
         return stored["customer_id"]
     customer_id = _live().create_customer("Ukko demo kitchen")
     _save_profile(customer_id, "", "", "")
@@ -304,9 +346,19 @@ def charge(amount: Decimal, currency: str, request_id: str, description: str) ->
     profile = _ready_profile()
     if not profile:
         raise PaymentError("No kitchen card on file. Open Settings → Payment, add a card once, then try again.")
-    payment_intent_id = backend.charge(
-        profile["customer_id"], profile["payment_method_id"], _cents(amount),
-        currency, request_id, description,
-    )
+    try:
+        payment_intent_id = backend.charge(
+            profile["customer_id"], profile["payment_method_id"], _cents(amount),
+            currency, request_id, description,
+        )
+    except PaymentError as error:
+        # Only drop the profile when Stripe says the customer/PM no longer exists.
+        message = str(error).lower()
+        if "no such" in message or "resource_missing" in message:
+            clear_profile()
+            raise PaymentError(
+                "The saved kitchen card is no longer valid. Open Settings → Payment, add a card once, then try again."
+            ) from error
+        raise
     label = f"Stripe test · {profile.get('brand') or 'Card'} ····{profile.get('last4') or '????'}"
     return payment_intent_id, label

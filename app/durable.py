@@ -45,6 +45,11 @@ _IMMEDIATE = frozenset({
     "gateway/keys/supplier.json",
     "gateway/buyers.json",
 })
+# Always pull these from Blob on boot so every instance sees the latest kitchen card
+# (warm /tmp copies of an old fixture profile must not win over Blob).
+_ALWAYS_RESTORE = frozenset({
+    "stripe_customer.json",
+})
 
 
 def enabled() -> bool:
@@ -88,7 +93,8 @@ def hydrate(data_dir: Path) -> int:
     restored = 0
     for relative in TRACKED:
         dest = data_dir / relative
-        if dest.exists() and dest.stat().st_size > 0:
+        force = relative in _ALWAYS_RESTORE
+        if not force and dest.exists() and dest.stat().st_size > 0:
             continue
         try:
             result = blob.get_blob(_pathname(relative), access="private")

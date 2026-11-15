@@ -77,31 +77,72 @@ function shelfSettled(state) {
   ));
 }
 
-// Only low/critical items that still need attention (hide once ordered or rejected).
+function neededTile(state, item) {
+  const status = shelfStatus(state, item);
+  const why = waitReason(state, item);
+  const seen = item.quantity != null && Number(item.quantity) > 0;
+  const conf = seen && item.confidence != null ? ` · ${percent(item.confidence)} conf.`
+    : (item.quantity != null && Number(item.quantity) <= 0 ? " · not seen" : "");
+  const detail = why
+    ? why
+    : item.quantity != null
+      ? `pcs estimated${conf}`
+      : "waiting for the first look";
+  return `
+    <div class="tile ${status} ${picked(item)}" data-product-key="${esc(item.product_key)}" title="${esc(item.name)}">
+      <div class="tile-name">${esc(item.name)}</div>
+      <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "Not seen yet")}</b>
+      <span class="small">${esc(detail)}</span>
+    </div>`;
+}
+
+function onOrderTile(state, item) {
+  const request = latestFor(state, item);
+  const plan = request?.decision?.chosen_plan;
+  const units = item.on_order_units != null && Number(item.on_order_units) > 0
+    ? qtyNum(item.on_order_units)
+    : null;
+  const delivery = plan?.delivery_date ? day(plan.delivery_date) : null;
+  const detail = [
+    units != null ? `${units} units inbound` : "Ordered",
+    delivery ? `due ${delivery}` : null,
+  ].filter(Boolean).join(" · ");
+  return `
+    <div class="tile ordered ${picked(item)}" data-product-key="${esc(item.product_key)}" title="${esc(item.name)}">
+      <div class="tile-name">${esc(item.name)}</div>
+      <b>${units ?? "On order"}</b>
+      <span class="small">${esc(detail)}</span>
+    </div>`;
+}
+
+function isOnOrderItem(state, item) {
+  if (latestFor(state, item)?.decision.status === "ordered") return true;
+  return Number(item.on_order_units) > 0 && item.level !== "full";
+}
+
+// Low/critical items that still need attention, plus a separate On order group after commit.
 function drawReplenishment(state) {
   const needed = state.shelf.filter((item) => (
     (item.level === "low" || item.level === "empty") && !handledStatus(state, item)
   ));
-  put("replenishment", needed.map((item) => {
-    const status = shelfStatus(state, item);
-    const why = waitReason(state, item);
-    const seen = item.quantity != null && Number(item.quantity) > 0;
-    const conf = seen && item.confidence != null ? ` · ${percent(item.confidence)} conf.`
-      : (item.quantity != null && Number(item.quantity) <= 0 ? " · not seen" : "");
-    const detail = why
-      ? why
-      : item.quantity != null
-        ? `pcs estimated${conf}`
-        : "waiting for the first look";
-    return `
-    <div class="tile ${status} ${picked(item)}" data-product-key="${esc(item.product_key)}" title="${esc(item.name)}"><div class="tile-name">${esc(item.name)}</div>
-      <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "Not seen yet")}</b>
-      <span class="small">${esc(detail)}</span></div>`;
-  }).join("")
-    || `<div class="empty-state">
-      <b>Shelf looks stocked</b>
-      <p class="small">Nothing needs replenishment. Take cartons off the shelf, or type a request below.</p>
-    </div>`);
+  const neededKeys = new Set(needed.map((item) => item.product_key));
+  const onOrder = state.shelf.filter((item) => !neededKeys.has(item.product_key) && isOnOrderItem(state, item));
+
+  const neededHtml = needed.length
+    ? `<div class="tiles">${needed.map((item) => neededTile(state, item)).join("")}</div>`
+    : (onOrder.length
+      ? ""
+      : `<div class="tiles"><div class="empty-state">
+          <b>Shelf looks stocked</b>
+          <p class="small">Nothing needs replenishment. Take cartons off the shelf, or type a request below.</p>
+        </div></div>`);
+  const onOrderHtml = onOrder.length
+    ? `<div class="tile-section">
+        <div class="eyebrow">On order</div>
+        <div class="tiles">${onOrder.map((item) => onOrderTile(state, item)).join("")}</div>
+      </div>`
+    : "";
+  put("replenishment", `${neededHtml}${onOrderHtml}`);
 }
 
 function drawOrders(state) {

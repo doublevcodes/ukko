@@ -40,6 +40,8 @@ def _deny_reasons(request: OrderRequest, plan: Plan, findings: list[WebFinding])
 def _order_reasons(request: OrderRequest, plan: Plan, config: PolicyConfig) -> list[str]:
     """Rules about the order itself: size, substitutes, delivery, category."""
     reasons = []
+    if request.source == "typed":
+        reasons.append("Manual request rule: typed requests always need a person's approval.")
     if plan.total > config.auto_approve_max_total_eur:
         reasons.append(f"Spend limit rule: the total of {plan.total:.2f} EUR is above the "
                        f"{config.auto_approve_max_total_eur:.2f} EUR auto-approve limit.")

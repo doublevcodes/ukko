@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app import intake
+from app import intake, ordering
 from tests.helpers import approve, event, in_days, log_text, set_limit, shelf_runs_low, typed
 
 
@@ -65,6 +65,27 @@ def test_4_price_rises_before_an_approved_order_so_it_replans_and_asks_again(wor
     assert world.orders() == []
     approve(record)
     assert record.decision.status == "ordered" and record.decision.order_confirmation.total == Decimal("210.00")
+
+
+def test_4_expired_offer_refresh_keeps_approval_when_cart_unchanged(world, monkeypatch):
+    """JWT refresh alone must not bounce back to Approve/Reject — that was landing on Reject."""
+    set_limit(150)
+    record = shelf_runs_low()
+    assert record.decision.status == "awaiting_approval"
+    calls = {"n": 0}
+    real_place = ordering.place
+
+    def expire_once(request, plan, policy, approved_by_person):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ordering.Replan("The signed offer expired before ordering; fetching a fresh one.")
+        return real_place(request, plan, policy, approved_by_person)
+
+    monkeypatch.setattr(ordering, "place", expire_once)
+    approve(record)
+    assert record.decision.status == "ordered", record.decision.message
+    assert record.replans == 1
+    assert world.orders()
 
 
 def test_4_price_rises_while_the_agent_is_ordering_alone(world):

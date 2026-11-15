@@ -178,7 +178,9 @@ def build_plans(record: RequestRecord) -> PlanSet | None:
     plans = planner.build_plans(record.request, record.offers, record.exact_id)
     record.decision.substitute_options = plans.substitute_options
     if not plans.plans:
-        fail(record, "plans", "No plan is possible: no candidate can be ordered and meets the requirements. " + " ".join(plans.notes))
+        detail = " ".join(plans.notes).strip()
+        why = detail or "No candidate can be ordered and still meet the requirements."
+        fail(record, "plans", f"No plan is possible. {why}")
         return None
     listing = "; ".join(f"Plan {p.id} ({p.label}): {p.total:.2f} EUR, covers {p.coverage:.0%}" for p in plans.plans)
     state.log(record.id, "plans", f"Built {len(plans.plans)} plan(s). {listing}. {' '.join(plans.notes)}".strip())
@@ -287,11 +289,16 @@ def act(
         state.log(record.id, "order", decision.message)
         return
     if decision.policy_result.outcome == "needs_approval":
-        # A person just approved this plan (approved_plan is still None). Only ask again
-        # after a replan when the live cart is no longer what they signed off on.
+        # A person already signed off: only ask again when the live cart itself changed
+        # (products, qty, or a higher total). Offer JWT refresh alone must not bounce back —
+        # that redraw was landing a second click on Reject.
         if not approved_by_person:
             return _wait_for_person(record)
         if approved_plan is not None and _plan_needs_reapproval(approved_plan, decision.chosen_plan):
+            state.log(
+                record.id, "approval",
+                "The refreshed plan differs from what was approved, so a person must sign off again.",
+            )
             return _wait_for_person(record)
     try:
         confirmation = ordering.place(record.request, decision.chosen_plan, state.policy, approved_by_person)

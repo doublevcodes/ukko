@@ -21,6 +21,7 @@ let selectedProductKey = null;  // the product clicked in the camera picture; it
 let orderModalId = null;  // id of the request shown in the Orders details modal
 let newest = null;      // id of the newest request seen, so a new one is shown as soon as it arrives
 let trouble = "";       // a problem to show in the top bar (lost connection, a refused mode change)
+let approvalBusy = false;  // true while Approve/Reject is in flight — blocks redraw click retargeting
 const folds = new Map();  // which fold-out sections of the decision the reader opened or closed
 const orderFolds = new Map();  // fold-outs inside the Orders details modal
 
@@ -152,17 +153,17 @@ async function mountEmbeddedCheckout() {
 
 // Safe mode and Autopilot are two settings of one rule: the auto-approve spend limit.
 // Safe mode sets it to zero, so every order waits for a person. Autopilot puts the limit back.
-// Autopilot auto-orders exact or closest catalogue matches that are full, on-time, under the
-// limit, with clear web checks. True substitutes (Plan B shortfalls) still need a person.
+// Autopilot auto-orders camera/sensor reorders that are exact or closest match, full, on-time,
+// under the limit, with clear web checks. Typed Ask Ukko requests always need a person.
 function drawMode() {
   const limit = Number(state.policy.auto_approve_max_total_eur);
   const button = (mode, on, label, hint) =>
     `<button data-mode="${mode}" class="${on ? "on" : ""}" title="${hint}" ${SAMPLE ? "disabled" : ""}>${label}</button>`;
   put("mode", button("safe", !limit, "Safe mode", "Every order waits for a person's approval")
     + button("autopilot", limit, "Autopilot",
-      "Orders alone when exact or closest match, full qty, on time, under the limit, and web checks are clear"));
+      "Shelf reorders alone when exact or closest match, full qty, on time, under the limit, and web checks are clear. Typed requests always need approval."));
   put("mode-hint", limit
-    ? `Autopilot is on · exact or closest matches up to ${euros(limit)} auto-approve without a person.`
+    ? `Autopilot is on · shelf reorders up to ${euros(limit)} can auto-approve; typed requests always need a person.`
     : "Safe mode is on · every order needs a person's approval.");
   drawPayment();
 }
@@ -182,12 +183,22 @@ async function setMode(mode) {
 function approvalActions(request, noteId, errorId) {
   if (request.decision.status !== "awaiting_approval") return "";
   const total = request.decision.chosen_plan ? " " + money(request.decision.chosen_plan.total) : "";
+  // Approve first so a primary click cannot land on Reject after a mid-click redraw.
   return `
     <div class="approval-actions">
       <input type="text" id="${noteId}" placeholder="Note (optional)" maxlength="300" autocomplete="off">
-      <button type="button" class="reject" data-action="reject">Reject</button>
       <button type="button" class="approve" data-action="approve">Approve${total}</button>
+      <button type="button" class="reject" data-action="reject">Reject</button>
       <span id="${errorId}" class="error"></span>
+    </div>`;
+}
+
+function dismissActions(request) {
+  const status = request.decision.status;
+  if (status !== "failed" && status !== "rejected") return "";
+  return `
+    <div class="approval-actions">
+      <button type="button" class="primary" data-action="dismiss">Got it</button>
     </div>`;
 }
 
@@ -201,7 +212,7 @@ function drawDecision() {
   }
   card?.classList.add("active");
   const clarifying = request.decision.status === "needs_clarification" && request.source === "typed";
-  const actions = clarifying ? "" : approvalActions(request, "note", "approval-error");
+  const actions = clarifying ? "" : (approvalActions(request, "note", "approval-error") || dismissActions(request));
   const foldState = (key, fallback) => (folds.has(key) ? folds.get(key) : fallback);
   const composer = clarifying ? `
     <form id="answer-form" class="ask decision-composer">
@@ -209,18 +220,23 @@ function drawDecision() {
       <button type="submit" class="primary">Answer</button>
     </form>` : "";
   // While the plan is still forming, keep a skeleton up so half-drawn folds never flash.
-  if (decisionPending(request)) {
+  if (decisionPending(request) || approvalBusy) {
     put("decision", `
       <div class="decision-scroll">${decisionSkeletonHtml(request)}</div>
       <div class="decision-footer">${decisionFooterSkeletonHtml()}</div>`);
     return;
   }
-  // Approve strip stays pinned under the scrollable details.
+  // Approve / dismiss strip stays pinned under the scrollable details.
   const body = decisionHtml(request, "", foldState);
-  const showFooter = !clarifying && (request.decision.chosen_plan || request.decision.order_confirmation || actions);
+  const showFooter = !clarifying && (
+    request.decision.chosen_plan || request.decision.order_confirmation || actions
+  );
+  const footer = request.decision.chosen_plan || request.decision.order_confirmation
+    ? summaryHtml(request.decision, actions)
+    : actions;
   put("decision", `
     <div class="decision-scroll">${body}</div>
-    ${showFooter ? `<div class="decision-footer">${summaryHtml(request.decision, actions)}</div>` : ""}
+    ${showFooter ? `<div class="decision-footer">${footer}</div>` : ""}
     ${composer}`);
 }
 
@@ -269,11 +285,11 @@ function draw() {
     const waiting = state.requests.find(needsPerson);
     if (waiting) selected = waiting.id;
   }
-  // When every shelf item is stocked or already ordered, drop a finished decision so the
-  // typed Ask Ukko box is visible again.
+  // When the shelf is calm, drop a successful order so Ask Ukko is free again.
+  // Failed / rejected must stay visible — otherwise "no plan" looks like a silent no-op.
   if (shelfSettled(state)) {
     showing = state.requests.find((request) => request.id === selected);
-    if (!showing || !isOpen(showing)) selected = null;
+    if (!showing || showing.decision.status === "ordered") selected = null;
   }
   drawHeader(); drawMode(); drawDecision();
   drawReplenishment(state); drawCamera(state);
@@ -343,14 +359,17 @@ $("reset-orders").addEventListener("click", async () => {
   button.disabled = true;
   status.textContent = "Resetting…";
   try {
-    await send("POST", "/reset", {});
+    const answer = await send("POST", "/reset", {});
     selected = null;
     selectedProductKey = null;
     newest = null;
     orderModalId = null;
     folds.clear();
     orderFolds.clear();
-    status.textContent = "Orders cleared.";
+    const card = answer.payment?.ready
+      ? ` Kitchen card kept (${answer.payment.label}).`
+      : "";
+    status.textContent = `Orders cleared.${card}`;
     await poll();
   } catch (error) {
     status.textContent = error.message || "Reset failed.";
@@ -388,6 +407,9 @@ $("request-form").addEventListener("submit", async (event) => {
 });
 
 async function actOnApproval(requestId, action, note) {
+  if (action !== "approve" && action !== "reject") {
+    throw new Error(`Unknown approval action '${action}'.`);
+  }
   await send("POST", `/approvals/${requestId}`, { action, note });
   // Keep this request selected through working → ordered/failed so another pending
   // approval does not jump into the panel mid-flight.
@@ -395,17 +417,42 @@ async function actOnApproval(requestId, action, note) {
   poll();
 }
 
-$("decision").addEventListener("click", async (event) => {
-  // Remember a fold-out the reader opened or closed, so the next redraw keeps it that way.
-  // (The click arrives before the browser flips it, hence the "!".)
+async function handleApprovalClick(event, requestId, noteId, errorId) {
   const summary = event.target.closest("summary");
-  if (summary) folds.set(summary.parentElement.dataset.key, !summary.parentElement.open);
-  const button = event.target.closest("[data-action]");
-  if (!button) return;
-  button.disabled = true;
+  if (summary) {
+    const foldsMap = event.currentTarget === $("decision") ? folds : orderFolds;
+    foldsMap.set(summary.parentElement.dataset.key, !summary.parentElement.open);
+  }
+  const button = event.target.closest("button[data-action]");
+  if (!button || approvalBusy) return;
+  const action = button.dataset.action;
+  if (action === "dismiss") {
+    selected = null;
+    folds.clear();
+    draw();
+    return;
+  }
+  if (action !== "approve" && action !== "reject") return;
+  if (!requestId) return;
+  if (action === "reject" && !window.confirm("Reject this plan? Nothing will be ordered.")) return;
+  approvalBusy = true;
+  for (const el of event.currentTarget.querySelectorAll("button[data-action]")) el.disabled = true;
+  const note = $(noteId)?.value || "";
   try {
-    await actOnApproval(selected, button.dataset.action, $("note").value);
-  } catch (error) { $("approval-error").textContent = error.message; button.disabled = false; }
+    await actOnApproval(requestId, action, note);
+  } catch (error) {
+    const err = $(errorId);
+    if (err) err.textContent = error.message;
+    approvalBusy = false;
+    draw();
+    return;
+  }
+  approvalBusy = false;
+  poll();
+}
+
+$("decision").addEventListener("click", async (event) => {
+  await handleApprovalClick(event, selected, "note", "approval-error");
 });
 
 $("orders").addEventListener("click", (event) => {
@@ -424,18 +471,7 @@ $("order-detail").addEventListener("close", () => {
 });
 
 $("order-detail").addEventListener("click", async (event) => {
-  const summary = event.target.closest("summary");
-  if (summary) orderFolds.set(summary.parentElement.dataset.key, !summary.parentElement.open);
-  const button = event.target.closest("[data-action]");
-  if (!button || !orderModalId) return;
-  button.disabled = true;
-  try {
-    await actOnApproval(orderModalId, button.dataset.action, $("order-note")?.value || "");
-  } catch (error) {
-    const err = $("order-approval-error");
-    if (err) err.textContent = error.message;
-    button.disabled = false;
-  }
+  await handleApprovalClick(event, orderModalId, "order-note", "order-approval-error");
 });
 
 $("decision").addEventListener("submit", async (event) => {

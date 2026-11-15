@@ -17,12 +17,14 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-widt
 .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .card.procurement { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .card.procurement .card-head { flex: none; }
-.card.procurement .tiles { flex: 1 1 auto; align-content: start; min-height: 120px; }
-.card.procurement.active .tiles,
+.card.procurement .replenishment { flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; gap: 12px; }
+.card.procurement.active .replenishment,
 .card.procurement.active > #request-form,
 .card.procurement.active > #request-error { display: none; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 8px; }
-.tiles:has(.empty-state) { display: flex; align-items: center; justify-content: center; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 8px; align-content: start; }
+.tiles:has(.empty-state) { display: flex; align-items: center; justify-content: center; flex: 1 1 auto; min-height: 100px; }
+.tile-section { display: grid; gap: 8px; }
+.tile-section > .eyebrow { margin: 0; }
 .tile { padding: 8px 11px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); border-left: 3px solid var(--c); }
 .tile-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile.selected { background: var(--pick); outline: 2px solid var(--sky); outline-offset: -1px; }
@@ -119,6 +121,31 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-widt
 }
 #inventory tr.selected td { background: var(--pick); }
 #inventory tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--sky); }
+#inventory tr.inv-detail td {
+  padding-top: 0; padding-bottom: 14px;
+  border-top: 0;
+  background: color-mix(in srgb, var(--raised) 65%, transparent);
+}
+#inventory tr.inv-detail.selected td {
+  background: color-mix(in srgb, var(--blue) 10%, var(--pick));
+  box-shadow: none;
+}
+#inventory tr.inv-detail.selected td:first-child { box-shadow: inset 3px 0 0 var(--sky); }
+.inv-detail-panel {
+  display: grid; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg);
+}
+.inv-detail-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.inv-detail-facts { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.inv-detail-lines { display: grid; gap: 8px; }
+.inv-detail-line {
+  display: flex; justify-content: space-between; align-items: start; gap: 12px;
+  padding-top: 8px; border-top: 1px solid var(--line);
+}
+.inv-detail-line:first-child { padding-top: 0; border-top: 0; }
+.inv-detail-copy { display: grid; gap: 2px; min-width: 0; }
+.inv-detail-price { flex: none; font-weight: 650; font-variant-numeric: tabular-nums; }
 .inv-proposed { display: flex; flex-direction: column; gap: 6px; text-align: left; }
 .inv-line { display: flex; flex-direction: column; gap: 2px; line-height: 1.35; }
 .inv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }

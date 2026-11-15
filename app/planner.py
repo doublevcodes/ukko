@@ -171,6 +171,15 @@ def build_plans(request: OrderRequest, offers: list[Offer], exact_id: str | None
             plans.append(plan_b)
         elif exact_line is None or plans[0].coverage < 1:
             notes.append("No substitute that meets the requirements is available for the missing amount.")
+    if not plans and offers and not usable:
+        # Surface why every candidate was ruled out — otherwise the dashboard only sees "no plan".
+        reasons = []
+        for offer in offers[:5]:
+            why = rules.why_unusable(offer, request)
+            if why:
+                reasons.append(f"{offer.name}: {why}")
+        if reasons:
+            notes.append("Candidates that were ruled out: " + " ".join(reasons))
     used = {line.offer.product_id for plan in plans for line in plan.lines if line.is_substitute}
     return PlanSet(plans=rank_plans(plans), notes=notes, substitute_options=substitutes.shortlist(ranked, used))
 

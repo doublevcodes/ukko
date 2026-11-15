@@ -35,6 +35,8 @@ class RequestRecord(BaseModel):
     created_at: datetime
     source: Literal["sensor", "typed"]
     title: str
+    # Full typed text including clarification Q&A for the parser; title stays the original ask.
+    parse_text: str | None = None
     product_key: str | None = None
     request: OrderRequest | None = None
     decision: Decision
@@ -251,9 +253,12 @@ def _seed_from_config() -> None:
             )
 
 
-def reset_runtime() -> None:
-    """Wipe requests, shelf live fields, audit and usage history; keep card and keys."""
-    from app import forecast
+def reset_runtime() -> dict:
+    """Wipe requests, shelf live fields, audit and usage history; keep card and keys.
+
+    Returns the payment status after reset so the dashboard can confirm the card stayed.
+    """
+    from app import forecast, payments
 
     _seed_from_config()
     settings.AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -277,7 +282,11 @@ def reset_runtime() -> None:
     durable.mirror(orders)
     if supplier.parent.exists():
         durable.mirror(supplier)
-    log(None, "system", "Runtime state was reset: requests, shelf, audit and on-order cleared.")
+    # Never delete stripe_customer.json here — re-mirror so Blob keeps the real card.
+    payment = payments.preserve_for_reset()
+    kept = f" Kitchen card kept ({payment['label']})." if payment.get("ready") else ""
+    log(None, "system", f"Runtime state was reset: requests, shelf, audit and on-order cleared.{kept}")
+    return payment
 
 
 def set_detections(found: list[Detection]) -> None:
@@ -368,7 +377,10 @@ def request_view(record: RequestRecord) -> dict[str, Any]:
     Keeps offer_jwt on the chosen plan so the Verification panel can show the
     signed token. Audit finalise still strips tokens via without_signatures.
     """
-    view = record.model_dump(mode="json", exclude={"offers", "candidate_ids", "approval_token", "timeline"})
+    view = record.model_dump(
+        mode="json",
+        exclude={"offers", "candidate_ids", "approval_token", "timeline", "parse_text"},
+    )
     view["timeline"] = [entry.model_dump(mode="json", exclude={"details"}) for entry in record.timeline]
     return view
 

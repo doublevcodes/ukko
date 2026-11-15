@@ -30,7 +30,7 @@
             <span id="chips"></span>
           </div>
         </div>
-        <div class="tiles" id="replenishment"></div>
+        <div id="replenishment" class="replenishment"></div>
         <form id="request-form" class="ask">
           <input type="text" id="request-text" placeholder="What do you need?" maxlength="500" autocomplete="off">
           <button type="submit" class="primary">Ask Ukko</button>
@@ -141,7 +141,7 @@
     </div>
 
     <div class="settings-pane" id="settings-mode" data-pane="mode">
-      <p class="small">Safe mode makes every order wait for a person. Autopilot restores the spend limit and auto-orders exact or closest catalogue matches that are full, on time, under that limit, with clear web checks. True substitutes still need a person.</p>
+      <p class="small">Safe mode makes every order wait for a person. Autopilot restores the spend limit and auto-orders shelf reorders that are exact or closest catalogue matches, full, on time, under that limit, with clear web checks. Typed Ask Ukko requests and true substitutes always need a person.</p>
       <div class="segmented" id="mode"></div>
       <p class="small" id="mode-hint"></p>
     </div>

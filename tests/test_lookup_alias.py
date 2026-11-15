@@ -88,8 +88,9 @@ def test_hell_typed_request_orders_closest_energy_drink_as_exact(world, monkeypa
         world, "They need 10 cans of HELL by tomorrow",
         item_description="HELL", search_terms="HELL", quantity=10, unit="pcs", needed_by=in_days(1),
     )
-    assert record.decision.status == "ordered"
-    assert record.decision.policy_result.outcome == "auto_approve"
+    assert record.decision.status == "awaiting_approval"
+    assert record.decision.policy_result.outcome == "needs_approval"
+    assert any("Manual request rule" in reason for reason in record.decision.policy_result.reasons)
     assert record.decision.chosen_plan is not None
     assert record.decision.chosen_plan.id == "A"
     line = record.decision.chosen_plan.lines[0]

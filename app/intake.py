@@ -28,23 +28,42 @@ def _guarded(record: RequestRecord, work: Callable[[], None]) -> None:
     pipeline.finalise(record)
 
 
+def _original_title(title: str) -> str:
+    """Strip any clarification Q&A that older builds folded into the title."""
+    return title.split("\n(Ukko asked:", 1)[0].strip() or title
+
+
 def new_typed_request(text: str, reply_to: str | None = None) -> RequestRecord:
-    """Create the record for a typed request. An answer to a question is joined to the original text."""
+    """Create the record for a typed request.
+
+    Clarification answers are joined for the parser, but the title stays the original ask.
+    """
     earlier = state.requests.get(reply_to) if reply_to else None
+    title = text
+    parse_text = text
+    answered = None
     if earlier and earlier.decision.status == "needs_clarification" and earlier.source == "typed":
-        text = f"{earlier.title}\n(Ukko asked: {earlier.decision.message})\nAnswer: {text}"
+        title = _original_title(earlier.title)
+        prior = earlier.parse_text or earlier.title
+        parse_text = f"{prior}\n(Ukko asked: {earlier.decision.message})\nAnswer: {text}"
+        answered = text
         with state.lock:
             # The question is answered, so the half-finished request leaves the dashboard.
             # Its entries stay in the audit log.
             state.requests.pop(earlier.id, None)
-    record = state.new_request("typed", text)
-    state.log(record.id, "request", f"Someone typed: \"{text}\"")
+    record = state.new_request("typed", title)
+    record.parse_text = parse_text
+    if answered is not None:
+        state.log(record.id, "request", f"Someone answered: \"{answered}\"")
+    else:
+        state.log(record.id, "request", f"Someone typed: \"{text}\"")
     return record
 
 
 def run_typed(record: RequestRecord) -> None:
     def work() -> None:
-        if pipeline.parse_request(record, record.title) and pipeline.lookup(record):
+        text = record.parse_text or record.title
+        if pipeline.parse_request(record, text) and pipeline.lookup(record):
             pipeline.decide(record)
     _guarded(record, work)
 

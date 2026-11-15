@@ -22,8 +22,8 @@
     <section class="card">
       <div id="content"><p>Loading…</p></div>
       <div class="buttons" id="buttons" hidden>
-        <button class="reject" data-action="reject">Reject</button>
-        <button class="approve" data-action="approve">Approve &amp; pay</button>
+        <button type="button" class="approve" data-action="approve">Approve &amp; pay</button>
+        <button type="button" class="reject" data-action="reject">Reject</button>
       </div>
       <p id="error" class="error"></p>
     </section>
@@ -50,14 +50,17 @@
     }
 
     buttons.addEventListener("click", async (event) => {
-      const action = event.target.dataset.action;
-      if (!action) return;
+      const button = event.target.closest("button[data-action]");
+      const action = button?.dataset.action;
+      if (action !== "approve" && action !== "reject") return;
+      if (action === "reject" && !window.confirm("Reject this plan? Nothing will be ordered.")) return;
       buttons.hidden = true;
       const response = await fetch(`/phone/${code}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, note: "" }),
       });
       if (!response.ok) {
         document.getElementById("error").textContent = "That did not work. The order may already have been decided.";
+        buttons.hidden = false;
         return;
       }
       content.innerHTML = action === "approve"

@@ -43,17 +43,12 @@ function proposedFor(state, item) {
   const order = decision?.order_confirmation;
 
   if (status === "ordered" && (plan || order)) {
-    const lines = (plan?.lines || []).map((line) => {
-      const name = shortOfferName(line.offer);
-      return `<div class="inv-line"><b>${esc(`${line.quantity} × ${packLabel(line.offer)}`)}</b>`
-        + (name ? `<span class="small">${esc(name)}</span>` : "") + `</div>`;
-    }).join("");
     const total = order?.total != null ? money(order.total) : (plan ? money(plan.total) : null);
     const meta = [
       total,
-      plan?.delivery_date ? day(plan.delivery_date) : null,
+      plan?.delivery_date ? `due ${day(plan.delivery_date)}` : null,
     ].filter(Boolean).join(" · ");
-    return `<div class="inv-proposed">${lines}`
+    return `<div class="inv-proposed"><b>On order</b>`
       + (meta ? `<div class="inv-meta"><span class="small">${esc(meta)}</span></div>` : "")
       + `</div>`;
   }
@@ -69,6 +64,56 @@ function proposedFor(state, item) {
   if (why) return `<span class="small">${esc(why)}</span>`;
   const qty = item.model_order_quantity != null ? amount(item.model_order_quantity) : "—";
   return `<span class="small">model would order ${esc(String(qty))}</span>`;
+}
+
+// Extra table row under ordered / on-order products: lines, delivery, totals.
+function orderDetailRow(state, item) {
+  const request = latestFor(state, item);
+  const decision = request?.decision;
+  const status = decision?.status;
+  const plan = decision?.chosen_plan;
+  const order = decision?.order_confirmation;
+  const onOrderUnits = Number(item.on_order_units) > 0;
+  if (status !== "ordered" && !(onOrderUnits && item.level !== "full")) return "";
+  if (!plan && !order && !onOrderUnits) return "";
+
+  const lines = (plan?.lines || []).map((line) => {
+    const name = line.offer?.name || shortOfferName(line.offer) || "Product";
+    const pack = packLabel(line.offer);
+    const qty = `${line.quantity} × ${pack}`;
+    const price = line.line_total != null ? money(line.line_total) : "";
+    return `<div class="inv-detail-line">
+      <div class="inv-detail-copy">
+        <b>${esc(name)}</b>
+        <span class="small">${esc(qty)}${line.is_substitute ? " · substitute" : ""}</span>
+      </div>
+      ${price ? `<span class="inv-detail-price">${esc(price)}</span>` : ""}
+    </div>`;
+  }).join("");
+
+  const facts = [
+    order?.order_id ? `Order <span class="mono">${esc(order.order_id)}</span>` : null,
+    plan?.delivery_date ? `Delivery ${esc(day(plan.delivery_date))}` : null,
+    order?.placed_at ? `Placed ${esc(dayTime(order.placed_at))}` : null,
+    onOrderUnits ? `${esc(String(amount(item.on_order_units)))} units inbound` : null,
+    order?.flow === "human_present" ? "Manager approval"
+      : (order?.flow === "human_not_present" ? "Agent standing limits" : null),
+    order?.total != null ? `${esc(money(order.total))} excl. VAT`
+      : (plan?.total != null ? `${esc(money(plan.total))} excl. VAT` : null),
+  ].filter(Boolean);
+
+  return `
+    <tr class="inv-detail ${picked(item)}" data-product-key="${esc(item.product_key)}">
+      <td colspan="6">
+        <div class="inv-detail-panel">
+          <div class="inv-detail-head">
+            <span class="eyebrow">Order details</span>
+            <div class="inv-detail-facts">${facts.map((fact) => `<span class="small">${fact}</span>`).join("")}</div>
+          </div>
+          ${lines ? `<div class="inv-detail-lines">${lines}</div>` : `<p class="small">Inbound stock is recorded; line details are not available.</p>`}
+        </div>
+      </td>
+    </tr>`;
 }
 
 // Match the status filter: ordered/rejected low items still match Reorder/Critical so they
@@ -100,7 +145,7 @@ function drawInventory(state) {
   put("inventory-body", shown.map((item) => {
     const display = shelfStatus(state, item);
     return `
-    <tr data-product-key="${esc(item.product_key)}" class="${picked(item)}">
+    <tr data-product-key="${esc(item.product_key)}" class="inv-row ${picked(item)}">
       <td><b>${esc(item.name)}</b><div class="small">${catalogueLabel(item)}</div></td>
       <td>${pill(display, STOCK_WORDS[display] || display)}</td>
       <td>${levelGauge(item)} <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "—")}</b>
@@ -109,7 +154,7 @@ function drawInventory(state) {
       <td class="num">${confidenceLabel(item)}</td>
       <td>${modelMetrics(item)}</td>
       <td class="proposed">${proposedFor(state, item)}</td>
-    </tr>`;
+    </tr>${orderDetailRow(state, item)}`;
   }).join("") || `<tr><td colspan="6" class="small">No products match.</td></tr>`);
 }
 
