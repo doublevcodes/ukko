@@ -8,6 +8,13 @@ const AUTOPILOT_LIMIT_KEY = "ukko.autopilot_limit";  // the spend limit to resto
 // Same as app/state.py OPEN_STATUSES: in-progress work that can take over the decision panel.
 const OPEN = new Set(["working", "needs_clarification", "awaiting_approval"]);
 const isOpen = (request) => OPEN.has(request.decision.status);
+// These must stay on screen until a person acts — newer working orders must not cover them.
+const needsPerson = (request) => {
+  const status = request?.decision?.status;
+  return status === "awaiting_approval" || status === "needs_clarification";
+};
+const pickOpenRequest = () =>
+  state.requests.find(needsPerson)?.id || state.requests.find(isOpen)?.id || null;
 let state = null;       // the latest answer from GET /state
 let selected = null;    // id of the request shown in the decision panel
 let selectedProductKey = null;  // the product clicked in the camera picture; its tile, reading and inventory row are highlighted
@@ -245,14 +252,21 @@ function openOrderDetail(requestId) {
 }
 
 function draw() {
-  // Auto-show a brand-new open request. Keep a finished one (failed / ordered /
-  // rejected) on screen so the outcome is visible — only Approve/Reject clears it.
+  // Auto-show a brand-new open request, unless a person is already needed on the one
+  // in view. Keep a finished one (failed / ordered / rejected) on screen so the
+  // outcome is visible — only Approve/Reject clears it.
   if (state.requests[0] && state.requests[0].id !== newest) {
     newest = state.requests[0].id;
-    if (isOpen(state.requests[0])) selected = newest;
+    const current = state.requests.find((request) => request.id === selected);
+    if (isOpen(state.requests[0]) && !needsPerson(current)) selected = newest;
   }
-  const showing = state.requests.find((request) => request.id === selected);
-  if (!showing) selected = state.requests.find(isOpen)?.id || null;
+  let showing = state.requests.find((request) => request.id === selected);
+  if (!showing) selected = pickOpenRequest();
+  else if (!needsPerson(showing)) {
+    // A request elsewhere hit approval / clarification — surface it over working noise.
+    const waiting = state.requests.find(needsPerson);
+    if (waiting) selected = waiting.id;
+  }
   drawHeader(); drawMode(); drawDecision();
   drawReplenishment(state); drawCamera(state);
   drawInventory(state); drawOrders(state); drawActivity(state);

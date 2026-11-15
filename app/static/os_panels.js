@@ -103,17 +103,22 @@ function drawOrders(state) {
       <div><b>${labelHtml}</b><div class="small">${note}</div></div>
       <div class="item-side"><b>${money(total)}</b><div>${badge}</div></div>
     </button>`;
-  const orders = state.requests.filter((request) => request.decision.order_confirmation || waitingForApproval(state).includes(request)).map((request) => {
-    const order = request.decision.order_confirmation, plan = request.decision.chosen_plan;
-    const lines = plan ? plan.lines.length : order.lines.length;
-    const rest = `${lines} line${lines === 1 ? "" : "s"}${plan ? ` · delivery ${day(plan.delivery_date)}` : ""}`;
-    return order
-      ? item(request.id, `<span class="mono">${esc(order.order_id)}</span>`, order.total,
-        `${order.flow === "human_present" ? "Manager approval" : "Agent, within its standing limits"} · ${rest}`,
-        pill("ordered", order.receipts_verified ? "Ordered · receipts verified" : "Ordered"))
-      : item(request.id, `<span class="mono">${esc(request.id)}</span>`, plan.total, `Proposed by the agent · ${rest}`,
-        pill("awaiting_approval", "Awaiting approval"));
-  });
+  const pending = waitingForApproval(state);
+  const orders = state.requests
+    .filter((request) => request.decision.order_confirmation || pending.includes(request))
+    // Approvals first so new completed orders do not bury them.
+    .sort((a, b) => Number(b.decision.status === "awaiting_approval") - Number(a.decision.status === "awaiting_approval"))
+    .map((request) => {
+      const order = request.decision.order_confirmation, plan = request.decision.chosen_plan;
+      const lines = plan ? plan.lines.length : order.lines.length;
+      const rest = `${lines} line${lines === 1 ? "" : "s"}${plan ? ` · delivery ${day(plan.delivery_date)}` : ""}`;
+      return order
+        ? item(request.id, `<span class="mono">${esc(order.order_id)}</span>`, order.total,
+          `${order.flow === "human_present" ? "Manager approval" : "Agent, within its standing limits"} · ${rest}`,
+          pill("ordered", order.receipts_verified ? "Ordered · receipts verified" : "Ordered"))
+        : item(request.id, `<span class="mono">${esc(request.id)}</span>`, plan.total, `Proposed by the agent · ${rest}`,
+          pill("awaiting_approval", "Awaiting approval"));
+    });
   put("orders", orders.join("") || `<p class="small">No orders yet.</p>`);
 }
 
