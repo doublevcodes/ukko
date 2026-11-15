@@ -106,13 +106,8 @@ def health() -> dict[str, Any]:
 @app.post("/reset")
 def reset_runtime() -> dict[str, Any]:
     """Clear requests, shelf live fields, audit and on-order; keep Stripe card and keys."""
-    payment = state.reset_runtime()
-    return {
-        "ok": True,
-        "requests": 0,
-        "message": "Runtime state cleared.",
-        "payment": payment,
-    }
+    state.reset_runtime()
+    return {"ok": True, "requests": 0, "message": "Runtime state cleared."}
 
 
 @app.get("/camera/feed", include_in_schema=False)

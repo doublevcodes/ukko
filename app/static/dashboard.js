@@ -359,17 +359,14 @@ $("reset-orders").addEventListener("click", async () => {
   button.disabled = true;
   status.textContent = "Resetting…";
   try {
-    const answer = await send("POST", "/reset", {});
+    await send("POST", "/reset", {});
     selected = null;
     selectedProductKey = null;
     newest = null;
     orderModalId = null;
     folds.clear();
     orderFolds.clear();
-    const card = answer.payment?.ready
-      ? ` Kitchen card kept (${answer.payment.label}).`
-      : "";
-    status.textContent = `Orders cleared.${card}`;
+    status.textContent = "Orders cleared.";
     await poll();
   } catch (error) {
     status.textContent = error.message || "Reset failed.";

@@ -43,12 +43,17 @@ function proposedFor(state, item) {
   const order = decision?.order_confirmation;
 
   if (status === "ordered" && (plan || order)) {
+    const lines = (plan?.lines || []).map((line) => {
+      const name = shortOfferName(line.offer);
+      return `<div class="inv-line"><b>${esc(`${line.quantity} × ${packLabel(line.offer)}`)}</b>`
+        + (name ? `<span class="small">${esc(name)}</span>` : "") + `</div>`;
+    }).join("");
     const total = order?.total != null ? money(order.total) : (plan ? money(plan.total) : null);
     const meta = [
       total,
-      plan?.delivery_date ? `due ${day(plan.delivery_date)}` : null,
+      plan?.delivery_date ? day(plan.delivery_date) : null,
     ].filter(Boolean).join(" · ");
-    return `<div class="inv-proposed"><b>On order</b>`
+    return `<div class="inv-proposed">${lines}`
       + (meta ? `<div class="inv-meta"><span class="small">${esc(meta)}</span></div>` : "")
       + `</div>`;
   }
@@ -66,56 +71,6 @@ function proposedFor(state, item) {
   return `<span class="small">model would order ${esc(String(qty))}</span>`;
 }
 
-// Extra table row under ordered / on-order products: lines, delivery, totals.
-function orderDetailRow(state, item) {
-  const request = latestFor(state, item);
-  const decision = request?.decision;
-  const status = decision?.status;
-  const plan = decision?.chosen_plan;
-  const order = decision?.order_confirmation;
-  const onOrderUnits = Number(item.on_order_units) > 0;
-  if (status !== "ordered" && !(onOrderUnits && item.level !== "full")) return "";
-  if (!plan && !order && !onOrderUnits) return "";
-
-  const lines = (plan?.lines || []).map((line) => {
-    const name = line.offer?.name || shortOfferName(line.offer) || "Product";
-    const pack = packLabel(line.offer);
-    const qty = `${line.quantity} × ${pack}`;
-    const price = line.line_total != null ? money(line.line_total) : "";
-    return `<div class="inv-detail-line">
-      <div class="inv-detail-copy">
-        <b>${esc(name)}</b>
-        <span class="small">${esc(qty)}${line.is_substitute ? " · substitute" : ""}</span>
-      </div>
-      ${price ? `<span class="inv-detail-price">${esc(price)}</span>` : ""}
-    </div>`;
-  }).join("");
-
-  const facts = [
-    order?.order_id ? `Order <span class="mono">${esc(order.order_id)}</span>` : null,
-    plan?.delivery_date ? `Delivery ${esc(day(plan.delivery_date))}` : null,
-    order?.placed_at ? `Placed ${esc(dayTime(order.placed_at))}` : null,
-    onOrderUnits ? `${esc(String(amount(item.on_order_units)))} units inbound` : null,
-    order?.flow === "human_present" ? "Manager approval"
-      : (order?.flow === "human_not_present" ? "Agent standing limits" : null),
-    order?.total != null ? `${esc(money(order.total))} excl. VAT`
-      : (plan?.total != null ? `${esc(money(plan.total))} excl. VAT` : null),
-  ].filter(Boolean);
-
-  return `
-    <tr class="inv-detail ${picked(item)}" data-product-key="${esc(item.product_key)}">
-      <td colspan="6">
-        <div class="inv-detail-panel">
-          <div class="inv-detail-head">
-            <span class="eyebrow">Order details</span>
-            <div class="inv-detail-facts">${facts.map((fact) => `<span class="small">${fact}</span>`).join("")}</div>
-          </div>
-          ${lines ? `<div class="inv-detail-lines">${lines}</div>` : `<p class="small">Inbound stock is recorded; line details are not available.</p>`}
-        </div>
-      </td>
-    </tr>`;
-}
-
 // Match the status filter: ordered/rejected low items still match Reorder/Critical so they
 // do not disappear from the table after an order lands.
 function matchesInventoryStatus(state, item, status) {
@@ -126,6 +81,63 @@ function matchesInventoryStatus(state, item, status) {
   const handled = handledStatus(state, item);
   if (handled && (status === "reorder" || status === "critical") && stock === status) return true;
   return false;
+}
+
+// Ordered Ask Ukko / off-shelf lines that are not already a camera inventory row.
+function orderedOffShelfEntries(state) {
+  const shelfIds = new Set((state.shelf || []).map((item) => item.product_id).filter(Boolean));
+  const shelfKeys = new Set((state.shelf || []).map((item) => item.product_key));
+  const byProduct = new Map();
+  for (const request of state.requests || []) {
+    if (request.decision?.status !== "ordered") continue;
+    if (request.product_key && shelfKeys.has(request.product_key)) continue;
+    const plan = request.decision.chosen_plan;
+    const order = request.decision.order_confirmation;
+    const planLines = plan?.lines || [];
+    if (planLines.length) {
+      for (const line of planLines) {
+        const id = line.offer?.product_id;
+        if (!id || shelfIds.has(id) || byProduct.has(id)) continue;
+        byProduct.set(id, { request, line, kind: "plan" });
+      }
+      continue;
+    }
+    for (const line of order?.lines || []) {
+      const id = line.product_id;
+      if (!id || shelfIds.has(id) || byProduct.has(id)) continue;
+      byProduct.set(id, { request, line, kind: "order" });
+    }
+  }
+  return [...byProduct.values()];
+}
+
+function orderedOffShelfRow(entry) {
+  const { request, line, kind } = entry;
+  const offer = kind === "plan" ? line.offer : null;
+  const name = offer?.name || line.name || request.request?.item_description || request.title || "Ordered item";
+  const productId = offer?.product_id || line.product_id;
+  const qty = line.quantity;
+  const pack = offer ? packLabel(offer) : (line.sales_unit || "unit");
+  const order = request.decision.order_confirmation;
+  const plan = request.decision.chosen_plan;
+  const total = order?.total != null ? money(order.total) : (plan ? money(plan.total) : null);
+  const delivery = plan?.delivery_date || line.delivery_date || null;
+  const meta = [total, delivery ? day(delivery) : null].filter(Boolean).join(" · ");
+  return `
+    <tr class="ordered-off-shelf" data-request-id="${esc(request.id)}" data-product-id="${esc(productId || "")}">
+      <td><b>${esc(name)}</b>
+        <div class="small">${productId ? `Valio <span class="mono">${esc(productId)}</span> · ` : ""}Ask Ukko order</div>
+      </td>
+      <td>${pill("ordered", "On order")}</td>
+      <td><b>${esc(String(qty))} × ${esc(pack)}</b><div class="small">inbound</div></td>
+      <td class="num"><span class="small">—</span></td>
+      <td><span class="small">Not on camera shelf</span></td>
+      <td class="proposed"><div class="inv-proposed">
+        <div class="inv-line"><b>${esc(`${qty} × ${pack}`)}</b></div>
+        ${meta ? `<div class="inv-meta"><span class="small">${esc(meta)}</span></div>` : ""}
+        ${order?.order_id ? `<div class="small mono">${esc(order.order_id)}</div>` : ""}
+      </div></td>
+    </tr>`;
 }
 
 function drawInventory(state) {
@@ -142,10 +154,10 @@ function drawInventory(state) {
       }
       return STATUS_RANK[shelfStatus(state, a)] - STATUS_RANK[shelfStatus(state, b)];
     });
-  put("inventory-body", shown.map((item) => {
+  const shelfRows = shown.map((item) => {
     const display = shelfStatus(state, item);
     return `
-    <tr data-product-key="${esc(item.product_key)}" class="inv-row ${picked(item)}">
+    <tr data-product-key="${esc(item.product_key)}" class="${picked(item)}">
       <td><b>${esc(item.name)}</b><div class="small">${catalogueLabel(item)}</div></td>
       <td>${pill(display, STOCK_WORDS[display] || display)}</td>
       <td>${levelGauge(item)} <b>${item.quantity != null ? qtyNum(item.quantity) : (item.level ? LEVEL_WORDS[item.level] : "—")}</b>
@@ -154,8 +166,16 @@ function drawInventory(state) {
       <td class="num">${confidenceLabel(item)}</td>
       <td>${modelMetrics(item)}</td>
       <td class="proposed">${proposedFor(state, item)}</td>
-    </tr>${orderDetailRow(state, item)}`;
-  }).join("") || `<tr><td colspan="6" class="small">No products match.</td></tr>`);
+    </tr>`;
+  });
+  const offShelf = orderedOffShelfEntries(state).filter((entry) => {
+    if (status && status !== "ordered") return false;
+    const name = (entry.line.offer?.name || entry.line.name || entry.request.title || "").toLowerCase();
+    return !search || name.includes(search);
+  });
+  const extraRows = offShelf.map(orderedOffShelfRow);
+  const rows = [...shelfRows, ...extraRows];
+  put("inventory-body", rows.join("") || `<tr><td colspan="6" class="small">No products match.</td></tr>`);
 }
 
 // Valio catalogue mapping for a watched shelf food.

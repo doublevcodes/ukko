@@ -253,12 +253,9 @@ def _seed_from_config() -> None:
             )
 
 
-def reset_runtime() -> dict:
-    """Wipe requests, shelf live fields, audit and usage history; keep card and keys.
-
-    Returns the payment status after reset so the dashboard can confirm the card stayed.
-    """
-    from app import forecast, payments
+def reset_runtime() -> None:
+    """Wipe requests, shelf live fields, audit and usage history; keep card and keys."""
+    from app import forecast
 
     _seed_from_config()
     settings.AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -282,11 +279,7 @@ def reset_runtime() -> dict:
     durable.mirror(orders)
     if supplier.parent.exists():
         durable.mirror(supplier)
-    # Never delete stripe_customer.json here — re-mirror so Blob keeps the real card.
-    payment = payments.preserve_for_reset()
-    kept = f" Kitchen card kept ({payment['label']})." if payment.get("ready") else ""
-    log(None, "system", f"Runtime state was reset: requests, shelf, audit and on-order cleared.{kept}")
-    return payment
+    log(None, "system", "Runtime state was reset: requests, shelf, audit and on-order cleared.")
 
 
 def set_detections(found: list[Detection]) -> None:
